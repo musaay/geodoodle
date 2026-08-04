@@ -124,7 +124,11 @@ class GeoDoodleApp {
         else if (currentId === 'stats-screen') this.showStats();
         // For game and result screens, we shouldn't fully re-render to avoid losing state, 
         // but for simplicity we will just let the user see translations on next screen or we can update specific elements.
-        // Usually, language is changed on the home screen.
+        else if (currentId === 'game-screen') {
+          if (this.screens.game.updateLanguage) {
+            this.screens.game.updateLanguage();
+          }
+        }
       }
     });
 

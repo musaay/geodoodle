@@ -34,7 +34,7 @@ const translations = {
     // Game Screen
     hint_title: 'İpucu ({count} kaldı)',
     mode_text_blind: 'HAFIZADAN',
-    mode_text_trace: 'BU NEDİR',
+    mode_text_trace: 'EĞİTİM',
     tool_thin_title: 'İnce Kalem',
     tool_thin: 'İnce',
     tool_medium_title: 'Orta Kalem',
@@ -126,7 +126,7 @@ const translations = {
     // Game Screen
     hint_title: 'Hint ({count} left)',
     mode_text_blind: 'FROM MEMORY',
-    mode_text_trace: 'WHAT IS THAT',
+    mode_text_trace: 'TRAINING',
     tool_thin_title: 'Thin Pen',
     tool_thin: 'Thin',
     tool_medium_title: 'Medium Pen',

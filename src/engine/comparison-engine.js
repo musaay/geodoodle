@@ -17,7 +17,18 @@ export class ComparisonEngine {
     
     // Fallback if no drawing
     if (rawUserPoints.length < 3) {
-      return { score: 0, rank: getRank(0), visualData: null };
+      const padding = 40;
+      const scaledTargetPoints = canvasManager.normalizePathToCanvas(targetPath, padding);
+      const targetPoly = this.resamplePolygon(scaledTargetPoints, 60);
+      const visualData = {
+        targetPoly,
+        userPoly: [], // Empty drawing
+        rays: [],
+        canvasWidth: canvasManager.width,
+        canvasHeight: canvasManager.height,
+        avgDeviationPercent: "100.0"
+      };
+      return { score: 0, rank: getRank(0), visualData };
     }
 
     // Get the properly scaled target points based on the canvas size!
@@ -68,8 +79,8 @@ export class ComparisonEngine {
     const avgDeviation = totalDeviation / N;
     
     // Score based on average deviation vs bounding box diagonal
-    // If deviation is 0, score is 100. If deviation is e.g. 20% of diagonal, score is 0.
-    const maxAllowedDeviation = diag * 0.20; 
+    // If deviation is 0, score is 100. If deviation is e.g. 40% of diagonal, score is 0.
+    const maxAllowedDeviation = diag * 0.40; 
     let score = 100 - (avgDeviation / maxAllowedDeviation) * 100;
     score = Math.max(0, Math.min(100, Math.round(score)));
     

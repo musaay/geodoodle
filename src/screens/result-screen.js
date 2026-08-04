@@ -44,29 +44,38 @@ export class ResultScreen {
             <span style="color: var(--text-secondary); line-height: 1;">${isMultiplayer ? (isWinner ? t('result_winner') : isTie ? t('result_tie') : t('result_nice_try')) : modeText}</span>
           </div>
         </div>
-        <div id="p${num}-canvas-container" style="width: 100%; margin: 1rem auto;"></div>
-        <div style="display: flex; justify-content: space-between; margin-top: 0.5rem; font-size: 0.85rem; text-transform: uppercase; font-weight: bold; letter-spacing: 1px;">
-          <span style="color: var(--text-secondary);">${t('result_score')} <span style="color: var(--text-primary); font-size: 1.1rem; margin-left: 0.5rem;">${pScore} / 100</span></span>
-          <span style="color: var(--text-secondary);">${t('result_avg_dev')} <span style="color: var(--text-primary); font-size: 1.1rem; margin-left: 0.5rem;">${vData?.avgDeviationPercent ?? 0}%</span></span>
+        <div id="p${num}-canvas-container" style="width: 100%; margin: 1rem auto; background: var(--button-bg); border-radius: var(--radius-md); padding: 1rem; border: 1px solid var(--border-color);"></div>
+        <div style="display: flex; gap: 1rem; margin-top: 1rem;">
+          <div style="flex:1; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 1rem; display: flex; flex-direction: column; align-items: center; justify-content: center; box-shadow: var(--shadow);">
+            <span style="font-size: 0.7rem; text-transform: uppercase; color: var(--text-secondary); letter-spacing: 1px; font-weight: 600; margin-bottom: 0.25rem;">${t('result_score')}</span>
+            <div style="display: flex; align-items: baseline; gap: 0.25rem;">
+              <span style="font-size: 2rem; font-weight: 700; color: var(--accent-primary); line-height: 1;">${pScore}</span>
+              <span style="font-size: 0.85rem; color: var(--text-secondary); font-weight: 600;">/ 100</span>
+            </div>
+          </div>
+          <div style="flex:1; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 1rem; display: flex; flex-direction: column; align-items: center; justify-content: center; box-shadow: var(--shadow);">
+            <span style="font-size: 0.7rem; text-transform: uppercase; color: var(--text-secondary); letter-spacing: 1px; font-weight: 600; margin-bottom: 0.25rem;">${t('result_avg_dev')}</span>
+            <span style="font-size: 2rem; font-weight: 700; color: var(--accent-primary); line-height: 1;">${vData?.avgDeviationPercent ?? 0}%</span>
+          </div>
         </div>
         ${num === 1 ? `
-        <div style="display: flex; justify-content: flex-start; flex-wrap: wrap; gap: 1rem; margin-top: 0.5rem; font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 1px;">
-          <span style="display: flex; align-items: center; gap: 0.5rem;">
-            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 2l6 3v6l-6 3-6-3V5l6-3z" fill="none" stroke="currentColor" stroke-dasharray="2,2"/></svg>
+        <div style="display: flex; justify-content: center; flex-wrap: wrap; gap: 0.75rem; margin-top: 1.5rem; font-size: 0.75rem; color: var(--text-primary); font-weight: 500;">
+          <div style="display: flex; align-items: center; gap: 0.4rem; background: var(--button-bg); padding: 0.4rem 0.75rem; border-radius: var(--radius-full); border: 1px solid var(--border-color);">
+            <svg width="14" height="14" viewBox="0 0 16 16"><path d="M8 2l6 3v6l-6 3-6-3V5l6-3z" fill="none" stroke="currentColor" stroke-dasharray="2,2"/></svg>
             ${t('result_ref')}
-          </span>
-          <span style="display: flex; align-items: center; gap: 0.5rem;">
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.4rem; background: var(--button-bg); padding: 0.4rem 0.75rem; border-radius: var(--radius-full); border: 1px solid var(--border-color);">
             <div style="width: 6px; height: 6px; border-radius: 50%; background: var(--text-primary);"></div>
             ${t('result_pts')}
-          </span>
-          <span style="display: flex; align-items: center; gap: 0.5rem;">
-            <div style="width: 16px; height: 2px; background: ${theme === 'night' ? '#ff3b30' : '#ff4d4d'};"></div>
-            ${t('result_out')}
-          </span>
-          <span style="display: flex; align-items: center; gap: 0.5rem;">
-            <div style="width: 16px; height: 2px; background: ${theme === 'night' ? '#00f5d4' : '#4d94ff'};"></div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.4rem; background: var(--button-bg); padding: 0.4rem 0.75rem; border-radius: var(--radius-full); border: 1px solid var(--border-color);">
+            <div style="width: 12px; height: 3px; border-radius: 2px; background: var(--success);"></div>
             ${t('result_in')}
-          </span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.4rem; background: var(--button-bg); padding: 0.4rem 0.75rem; border-radius: var(--radius-full); border: 1px solid var(--border-color);">
+            <div style="width: 12px; height: 3px; border-radius: 2px; background: var(--danger);"></div>
+            ${t('result_out')}
+          </div>
         </div>
         ` : ''}
       </div>
@@ -79,11 +88,11 @@ export class ResultScreen {
         ${isMultiplayer ? renderPlayerHtml(2, p2Score, p2Score > p1Score, p1Score === p2Score, p2Visual) : ''}
       </div>
 
-      <div style="display: flex; flex-direction: column; align-items: center; margin-top: 1.5rem; gap: 0.5rem; margin-bottom: 0.5rem;">
-        <button class="btn" data-action="retry" style="display: flex; align-items: center; gap: 0.5rem; background: transparent; border: 2px solid var(--text-primary); color: var(--text-primary); text-transform: uppercase; letter-spacing: 1px; padding: 0.5rem 1.5rem; font-size: 0.85rem; font-weight: bold; border-radius: 0;">
-          <i data-lucide="rotate-ccw" style="width: 18px; height: 18px;"></i> ${t('play_again')}
+      <div style="display: flex; flex-direction: column; align-items: center; margin-top: 2rem; gap: 1rem; margin-bottom: 2rem;">
+        <button class="btn btn-primary" data-action="retry" style="display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 2rem; border-radius: var(--radius-full); font-size: 1rem; font-weight: 600; box-shadow: var(--shadow); border: none;">
+          <i data-lucide="rotate-ccw" style="width: 20px; height: 20px;"></i> ${t('play_again')}
         </button>
-        <button class="btn" data-action="next" style="display: flex; align-items: center; gap: 0.5rem; background: transparent; border: none; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 1px; font-size: 0.75rem; text-decoration: underline; padding: 0.25rem;">
+        <button class="btn btn-secondary" data-action="next" style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1.5rem; border-radius: var(--radius-full); font-size: 0.85rem; font-weight: 500; border: none; background: var(--button-bg);">
           <i data-lucide="home" style="width: 16px; height: 16px;"></i> ${t('back_to_menu')}
         </button>
       </div>

@@ -17,6 +17,7 @@ export class GameScreen {
     this.mode = 'trace';
     this.hintActive = false;
     this.hintTimer = null;
+    this.hintsRemaining = 3;
   }
 
   render(regionId, mode) {
@@ -34,14 +35,13 @@ export class GameScreen {
     const lang = getLanguage();
     const rName = lang === 'en' && this.region.nameEn ? this.region.nameEn : this.region.name;
     const regionName = rName.toUpperCase();
-    const hints = 3; // TODO: Get from game state if needed
 
     el.innerHTML = `
       <div style="position: relative; width: 100%; max-width: 100vw; margin: 0 auto; display: flex; flex-direction: column;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; text-transform: uppercase; font-size: 0.9rem; font-weight: bold; letter-spacing: 1px; height: 1.5rem;">
           <div style="display: flex; align-items: center; gap: 0.5rem;">
             <button class="btn btn-icon" data-action="back" style="font-size: 1.2rem; padding: 0; min-height: 0; min-width: 0; line-height: 1; border: none; background: transparent; color: var(--text-secondary);"><i data-lucide="arrow-left"></i></button>
-            <span style="color: var(--text-primary); line-height: 1;">${regionName}</span>
+            <span id="region-name" style="color: var(--text-primary); line-height: 1;">${regionName}</span>
           </div>
           <div style="display: flex; align-items: center; gap: 1rem;">
             ${mode === 'blind' ? `
@@ -50,11 +50,11 @@ export class GameScreen {
                   <circle cx="20" cy="20" r="16" fill="none" stroke="var(--border-color)" stroke-width="4"></circle>
                   <circle id="timer-ring-fg" cx="20" cy="20" r="16" fill="none" stroke="var(--text-primary)" stroke-width="4" stroke-dasharray="100" stroke-dashoffset="0" style="transition: stroke-dashoffset 1s linear;"></circle>
                 </svg>
-                <span id="timer-num" style="position:absolute; width: 100%; text-align: center; font-weight:bold; font-size: 0.6rem; line-height: 1;">10</span>
+                <span id="timer-num" style="position:absolute; width: 100%; text-align: center; font-weight:bold; font-size: 0.6rem; line-height: 1;">20</span>
               </div>
-              <button class="btn btn-icon animate-breathe" data-action="hint" title="${t('hint_title', {count: hints})}" style="font-size: 1rem; padding: 0; min-height: 0; min-width: 0; line-height: 1; border: none; background: transparent; display: flex; align-items: center;"><i data-lucide="lightbulb" style="color: var(--warning, #f39c12); width: 20px; height: 20px;"></i></button>
+              <button class="btn btn-icon animate-breathe" id="btn-hint" data-action="hint" title="${t('hint_title', {count: this.hintsRemaining})}" style="font-size: 1rem; padding: 0; min-height: 0; min-width: 0; line-height: 1; border: none; background: transparent; display: flex; align-items: center;"><i data-lucide="lightbulb" style="color: var(--warning, #f39c12); width: 20px; height: 20px;"></i></button>
             ` : ''}
-            <span style="color: var(--text-secondary); line-height: 1;">${modeText}</span>
+            <span id="mode-text" style="color: var(--text-secondary); line-height: 1;">${modeText}</span>
           </div>
         </div>
       </div>
@@ -145,7 +145,7 @@ export class GameScreen {
   }
 
   startTimer(el) {
-    let timeLeft = 10;
+    let timeLeft = 20;
     const ringFg = el.querySelector('#timer-ring-fg');
     const numEl = el.querySelector('#timer-num');
     if (!ringFg || !numEl) return;
@@ -157,7 +157,7 @@ export class GameScreen {
       timeLeft--;
       numEl.textContent = timeLeft;
       
-      const offset = 100 - (timeLeft / 10) * 100;
+      const offset = 100 - (timeLeft / 20) * 100;
       ringFg.style.strokeDashoffset = offset;
       
       if (timeLeft <= 3) {
@@ -230,12 +230,23 @@ export class GameScreen {
 
   showHint() {
     if (this.hintActive || !this.drawingEngine) return;
-    if (!this.app.gameState.useHint()) {
+    if (this.hintsRemaining <= 0) {
       this.app.showToast('İpucu hakkın kalmadı!');
       return;
     }
 
+    this.hintsRemaining--;
     this.hintActive = true;
+    
+    // Update hint button title
+    const hintBtn = document.getElementById('btn-hint');
+    if (hintBtn) {
+      hintBtn.title = t('hint_title', {count: this.hintsRemaining});
+      if (this.hintsRemaining === 0) {
+        hintBtn.style.opacity = '0.5';
+        hintBtn.classList.remove('animate-breathe');
+      }
+    }
     const theme = this.app.gameState.getTheme();
 
     // Temporarily show region outline
@@ -253,14 +264,14 @@ export class GameScreen {
     });
     this.drawingEngine.render();
 
-    // Remove hint after 5 seconds
+    // Remove hint after 2 seconds
     this.hintTimer = setTimeout(() => {
       this.drawingEngine.setExtraRender(originalExtra);
       this.drawingEngine.render();
       this.hintActive = false;
-    }, 5000);
+    }, 2000);
 
-    this.app.showToast(`İpucu: 5 saniye! (${this.app.gameState.getHintsRemaining()} kaldı)`);
+    this.app.showToast(`İpucu: 2 saniye! (${this.hintsRemaining} kaldı)`);
   }
 
   submitDrawing() {
@@ -276,15 +287,11 @@ export class GameScreen {
     }
 
     const comparison = new ComparisonEngine();
-    let result = { score: 0, rank: { name: 'Çırak' } };
-    
-    if (this.drawingEngine && this.drawingEngine.hasDrawing()) {
-      result = comparison.compare(
-        this.canvasManager,
-        this.drawingEngine,
-        this.region.path
-      );
-    }
+    const result = comparison.compare(
+      this.canvasManager,
+      this.drawingEngine,
+      this.region.path
+    );
 
     const session = this.app.gameState.session;
     
@@ -317,6 +324,37 @@ export class GameScreen {
       }
     } else {
       this.app.showResult(this.region, result, this.mode, isNewBest);
+    }
+  }
+
+  updateLanguage() {
+    const el = document.getElementById('game-screen');
+    if (!el) return;
+
+    // Update region name
+    const lang = getLanguage();
+    const rName = lang === 'en' && this.region.nameEn ? this.region.nameEn : this.region.name;
+    const rnEl = el.querySelector('#region-name');
+    if (rnEl) rnEl.textContent = rName.toUpperCase();
+
+    // Update mode text
+    const modeText = this.mode === 'blind' ? t('mode_text_blind') : t('mode_text_trace');
+    const mtEl = el.querySelector('#mode-text');
+    if (mtEl) mtEl.textContent = modeText;
+
+    // Update hint button
+    const hintBtn = el.querySelector('#btn-hint');
+    if (hintBtn) hintBtn.title = t('hint_title', {count: this.hintsRemaining});
+
+    // Update toolbar buttons
+    const tools = ['thin', 'medium', 'thick', 'eraser', 'undo', 'clear', 'submit'];
+    for (const tool of tools) {
+      const btn = el.querySelector(`[data-action="${tool === 'thin' || tool === 'medium' || tool === 'thick' ? 'brush-' + tool : tool}"]`);
+      if (btn) {
+        btn.title = t(`tool_${tool}_title`);
+        const span = btn.querySelector('span');
+        if (span) span.textContent = t(`tool_${tool}`);
+      }
     }
   }
 
