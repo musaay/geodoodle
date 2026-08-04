@@ -1,0 +1,189 @@
+/* src/styles/animations.css */
+
+/* 1. fadeIn */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* 2. fadeOut */
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* 3. slideInRight */
+@keyframes slideInRight {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+/* 4. slideOutLeft */
+@keyframes slideOutLeft {
+  from { transform: translateX(0); opacity: 1; }
+  to { transform: translateX(-100%); opacity: 0; }
+}
+
+/* 5. slideInUp */
+@keyframes slideInUp {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* 6. slideInDown */
+@keyframes slideInDown {
+  from { transform: translateY(-100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* 7. bounceIn */
+@keyframes bounceIn {
+  0% { transform: scale(0); opacity: 0; }
+  50% { transform: scale(1.2); opacity: 1; }
+  70% { transform: scale(0.9); }
+  90% { transform: scale(1.05); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* 8. starBurst */
+@keyframes starBurst {
+  0% { transform: scale(0) rotate(0deg); opacity: 0; }
+  50% { transform: scale(1.3) rotate(72deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0deg); opacity: 1; }
+}
+
+/* 9. pulseGlow */
+@keyframes pulseGlow {
+  0% { box-shadow: 0 0 5px currentColor; text-shadow: 0 0 5px currentColor; }
+  50% { box-shadow: 0 0 20px currentColor, 0 0 30px currentColor; text-shadow: 0 0 20px currentColor; }
+  100% { box-shadow: 0 0 5px currentColor; text-shadow: 0 0 5px currentColor; }
+}
+
+/* 10. shake */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-10px); }
+  40%, 80% { transform: translateX(10px); }
+}
+
+/* 11. compassSpin */
+@keyframes compassSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* 12. floatUp */
+@keyframes floatUp {
+  0% { transform: translateY(0); opacity: 1; }
+  100% { transform: translateY(-50px); opacity: 0; }
+}
+
+/* 13. drawLine */
+@keyframes drawLine {
+  from { stroke-dashoffset: 1000; }
+  to { stroke-dashoffset: 0; }
+}
+
+/* 14. revealOverlay */
+@keyframes revealOverlay {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* 15. lockUnlock */
+@keyframes lockUnlock {
+  0% { transform: scale(1) rotate(0); }
+  30% { transform: scale(1.2) rotate(-15deg); }
+  70% { transform: scale(1.2) rotate(15deg); }
+  100% { transform: scale(1) rotate(0); opacity: 0; }
+}
+
+/* 16. scoreCountUp */
+@keyframes scoreCountUp {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.2); color: var(--accent-secondary); }
+  100% { transform: scale(1); }
+}
+
+/* 17. ripple */
+@keyframes ripple {
+  0% { transform: scale(0); opacity: 0.5; }
+  100% { transform: scale(4); opacity: 0; }
+}
+
+/* 18. breathe */
+@keyframes breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+
+/* 19. gradientShift */
+@keyframes gradientShift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* 20. popIn */
+@keyframes popIn {
+  0% { transform: scale(0.5); opacity: 0; }
+  70% { transform: scale(1.1); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* Utility Classes */
+.animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }
+.animate-fade-out { animation: fadeOut 0.4s ease-out forwards; }
+.animate-slide-in-right { animation: slideInRight 0.4s ease-out forwards; }
+.animate-slide-out-left { animation: slideOutLeft 0.4s ease-in forwards; }
+.animate-slide-in-up { animation: slideInUp 0.4s ease-out forwards; }
+.animate-slide-in-down { animation: slideInDown 0.4s ease-out forwards; }
+.animate-bounce-in { animation: bounceIn 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+.animate-star-burst { animation: starBurst 0.6s ease-out forwards; }
+.animate-pulse-glow { animation: pulseGlow 2s infinite ease-in-out; }
+.animate-shake { animation: shake 0.5s ease-in-out; }
+.animate-compass-spin { animation: compassSpin 4s linear infinite; }
+.animate-float-up { animation: floatUp 1.5s ease-out forwards; }
+.animate-draw-line { animation: drawLine 2s ease-out forwards; }
+.animate-reveal-overlay { animation: revealOverlay 0.4s ease-out forwards; }
+.animate-lock-unlock { animation: lockUnlock 0.6s ease-in-out forwards; }
+.animate-score-count-up { animation: scoreCountUp 0.3s ease-out; }
+.animate-ripple { animation: ripple 0.6s linear forwards; }
+.animate-breathe { animation: breathe 3s ease-in-out infinite; }
+.animate-gradient-shift { animation: gradientShift 3s ease infinite; background-size: 200% 200%; }
+.animate-pop-in { animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+
+/* Screen transition system */
+@keyframes slideInLeft {
+  from { transform: translateX(-100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes slideOutRight {
+  from { transform: translateX(0); opacity: 1; }
+  to { transform: translateX(100%); opacity: 0; }
+}
+
+.screen-enter {
+  animation: slideInRight 0.4s ease-out forwards;
+}
+
+.screen-exit {
+  animation: slideOutLeft 0.3s ease-in forwards;
+}
+
+.screen-enter-back {
+  animation: slideInLeft 0.4s ease-out forwards;
+}
+
+.screen-exit-back {
+  animation: slideOutRight 0.3s ease-in forwards;
+}
+
+/* prefers-reduced-motion support */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
