@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 )
 
 func main() {
@@ -15,10 +16,22 @@ func main() {
 
 	// Serve the "dist" directory
 	fs := http.FileServer(http.Dir("./dist"))
-	http.Handle("/", fs)
+	
+	mux := http.NewServeMux()
+	mux.Handle("/", fs)
+
+	// Configure server with explicit timeouts to prevent Goroutine/memory leaks
+	// from stale keep-alive connections (especially behind load balancers like Railway)
+	srv := &http.Server{
+		Addr:         ":" + port,
+		Handler:      mux,
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
 
 	log.Printf("Starting static file server on port %s...", port)
-	err := http.ListenAndServe(":"+port, nil)
+	err := srv.ListenAndServe()
 	if err != nil {
 		log.Fatal("Server failed: ", err)
 	}
