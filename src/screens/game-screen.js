@@ -25,6 +25,10 @@ export class GameScreen {
     this.mode = mode;
     if (!this.region) return document.createElement('div');
 
+    // Fresh hint allowance for every game (screen instances are reused)
+    this.hintsRemaining = 3;
+    this.hintActive = false;
+
     const theme = this.app.gameState.getTheme();
     const el = document.createElement('div');
     el.className = 'screen';
@@ -136,7 +140,7 @@ export class GameScreen {
         });
       });
       
-      // Start 10 second timer
+      // Start 20 second timer
       this.startTimer(el);
     }
 
@@ -231,12 +235,13 @@ export class GameScreen {
   showHint() {
     if (this.hintActive || !this.drawingEngine) return;
     if (this.hintsRemaining <= 0) {
-      this.app.showToast('İpucu hakkın kalmadı!');
+      this.app.showToast(t('toast_no_hints'));
       return;
     }
 
     this.hintsRemaining--;
     this.hintActive = true;
+    this.app.gameState.recordHintUsed();
     
     // Update hint button title
     const hintBtn = document.getElementById('btn-hint');
@@ -271,7 +276,7 @@ export class GameScreen {
       this.hintActive = false;
     }, 2000);
 
-    this.app.showToast(`İpucu: 2 saniye! (${this.hintsRemaining} kaldı)`);
+    this.app.showToast(t('toast_hint_shown', { count: this.hintsRemaining }));
   }
 
   submitDrawing() {
@@ -281,7 +286,7 @@ export class GameScreen {
       if (this.gameTimer) {
         // They ran out of time
       } else {
-        this.app.showToast('Önce bir çizim yapmalısın!');
+        this.app.showToast(t('toast_draw_first'));
         return;
       }
     }

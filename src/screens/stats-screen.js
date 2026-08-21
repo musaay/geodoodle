@@ -56,10 +56,6 @@ export class StatsScreen {
             <span class="value">${stats.hintsUsed}</span>
             <span>${t('stats_hints_used')}</span>
           </div>
-          <div class="stat-item">
-            <span class="value">${this.app.gameState.getHintsRemaining()}</span>
-            <span>${t('stats_hints_remaining')}</span>
-          </div>
         </div>
 
         ${stats.totalDrawings > 0 ? `
@@ -103,7 +99,7 @@ export class StatsScreen {
     }
 
     el.querySelector('[data-action="reset"]').addEventListener('click', () => {
-      if (confirm('Tüm ilerlemen silinecek. Emin misin?')) {
+      if (confirm(t('stats_reset_confirm'))) {
         this.app.gameState.resetAll();
         this.app.showHome();
       }

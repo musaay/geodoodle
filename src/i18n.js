@@ -49,6 +49,9 @@ const translations = {
     tool_clear: 'Temizle',
     tool_submit_title: 'Gönder',
     tool_submit: 'Gönder',
+    toast_no_hints: 'İpucu hakkın kalmadı!',
+    toast_hint_shown: 'İpucu: 2 saniye! ({count} kaldı)',
+    toast_draw_first: 'Önce bir çizim yapmalısın!',
 
     // Result Screen
     result_winner: 'KAZANAN',
@@ -65,6 +68,7 @@ const translations = {
     result_in: 'İÇERİ',
     play_again: 'TEKRAR OYNA',
     back_to_menu: 'MENÜYE DÖN',
+    result_share: 'PAYLAŞ',
     player: 'O', // Oyuncu (O1, O2)
 
     // Stats Screen
@@ -75,13 +79,13 @@ const translations = {
     stats_best_score: 'En Yüksek Skor',
     stats_best_region: 'En İyi Bölge',
     stats_hints_used: 'İpucu Kullanılan',
-    stats_hints_remaining: 'İpucu Kalan',
     stats_progress: 'İlerleme',
     stats_overall_progress: 'Genel İlerleme',
     stats_no_drawings: 'Henüz çizim yapmadın!',
     stats_go_to_levels: 'Seviyelere gidip ilk çizimini yap.',
     stats_start: 'Başla',
     stats_reset_all: 'Tüm İlerlemeyi Sıfırla',
+    stats_reset_confirm: 'Tüm ilerlemen silinecek. Emin misin?',
 
     // Handoff Screen
     handoff_title: 'Sıra Sende!',
@@ -141,6 +145,9 @@ const translations = {
     tool_clear: 'Clear',
     tool_submit_title: 'Submit',
     tool_submit: 'Submit',
+    toast_no_hints: 'No hints left!',
+    toast_hint_shown: 'Hint: 2 seconds! ({count} left)',
+    toast_draw_first: 'You need to draw something first!',
 
     // Result Screen
     result_winner: 'WINNER',
@@ -157,6 +164,7 @@ const translations = {
     result_in: 'INSIDE',
     play_again: 'PLAY AGAIN',
     back_to_menu: 'BACK TO MENU',
+    result_share: 'SHARE',
     player: 'P', // Player (P1, P2)
 
     // Stats Screen
@@ -167,13 +175,13 @@ const translations = {
     stats_best_score: 'Best Score',
     stats_best_region: 'Best Region',
     stats_hints_used: 'Hints Used',
-    stats_hints_remaining: 'Hints Remaining',
     stats_progress: 'Progress',
     stats_overall_progress: 'Overall Progress',
     stats_no_drawings: 'You haven\'t drawn anything yet!',
     stats_go_to_levels: 'Go to levels and make your first drawing.',
     stats_start: 'Start',
     stats_reset_all: 'Reset All Progress',
+    stats_reset_confirm: 'All your progress will be deleted. Are you sure?',
 
     // Handoff Screen
     handoff_title: 'Your Turn!',

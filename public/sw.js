@@ -1,5 +1,7 @@
 // GeoDoodle Service Worker - Offline caching
-const CACHE_NAME = 'geodoodle-v1';
+// Bump the version on breaking cache changes; HTML is network-first so new
+// deploys reach users without a version bump.
+const CACHE_NAME = 'geodoodle-v2';
 
 const STATIC_ASSETS = [
   '/',
@@ -29,26 +31,36 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Fetch - cache-first strategy
+const isHtmlRequest = (request) =>
+  request.mode === 'navigate' ||
+  request.headers.get('accept')?.includes('text/html');
+
+const cachePut = (request, response) => {
+  if (response && response.ok && request.method === 'GET') {
+    const clone = response.clone();
+    caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+  }
+  return response;
+};
+
 self.addEventListener('fetch', (event) => {
+  const { request } = event;
+
+  // HTML: network-first so deploys propagate; fall back to cache offline.
+  if (isHtmlRequest(request)) {
+    event.respondWith(
+      fetch(request)
+        .then((response) => cachePut(request, response))
+        .catch(() => caches.match(request).then((cached) => cached || caches.match('/index.html')))
+    );
+    return;
+  }
+
+  // Everything else (hashed assets, fonts, images): cache-first.
   event.respondWith(
-    caches.match(event.request).then((cached) => {
+    caches.match(request).then((cached) => {
       if (cached) return cached;
-      return fetch(event.request).then((response) => {
-        // Cache successful responses
-        if (response.ok && event.request.method === 'GET') {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, clone);
-          });
-        }
-        return response;
-      }).catch(() => {
-        // Return offline fallback for HTML requests
-        if (event.request.headers.get('accept')?.includes('text/html')) {
-          return caches.match('/index.html');
-        }
-      });
+      return fetch(request).then((response) => cachePut(request, response));
     })
   );
 });

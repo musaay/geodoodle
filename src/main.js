@@ -1,5 +1,25 @@
+// Self-hosted font (was Google Fonts CDN) — weights used across the UI
+import '@fontsource/outfit/300.css';
+import '@fontsource/outfit/400.css';
+import '@fontsource/outfit/500.css';
+import '@fontsource/outfit/600.css';
+import '@fontsource/outfit/700.css';
+
 import './styles/index.css';
 import './styles/animations.css';
+import {
+  createIcons,
+  ArrowLeft, ArrowRight, BarChart2, Brain, CheckCircle2, Eraser, Home,
+  Lightbulb, Lock, Map, Moon, Paintbrush, Pen, PenTool, RotateCcw, Share2,
+  Star, Sun, Target, Trash2, TrendingUp, Undo2, User, Users,
+} from 'lucide';
+
+// Only the icons the app actually uses, so the rest of the set is tree-shaken
+const icons = {
+  ArrowLeft, ArrowRight, BarChart2, Brain, CheckCircle2, Eraser, Home,
+  Lightbulb, Lock, Map, Moon, Paintbrush, Pen, PenTool, RotateCcw, Share2,
+  Star, Sun, Target, Trash2, TrendingUp, Undo2, User, Users,
+};
 import { getLanguage } from './i18n.js';
 import { GameState } from './engine/game-state.js';
 import { HomeScreen } from './screens/home-screen.js';
@@ -9,6 +29,12 @@ import { ResultScreen } from './screens/result-screen.js';
 import { StatsScreen } from './screens/stats-screen.js';
 
 import { HandoffScreen } from './screens/handoff-screen.js';
+
+// Bundled Lucide (was unpkg CDN). Screens keep calling window.lucide.createIcons();
+// the shim always passes the bundled icon set along.
+window.lucide = {
+  createIcons: (options = {}) => createIcons({ icons, ...options }),
+};
 
 /**
  * GeoDoodle App - Main entry point and screen router

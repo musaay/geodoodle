@@ -7,7 +7,7 @@ const DEFAULT_STATE = {
   theme: 'day',
   completedRegions: {},
   totalDrawings: 0,
-  hintsRemaining: 10,
+  hintsUsed: 0,
   unlockedLevels: [1],
   firstTime: true,
   language: 'tr',
@@ -151,17 +151,11 @@ export class GameState {
     return stars;
   }
 
-  // Hints
-  useHint() {
-    if (this.state.hintsRemaining > 0) {
-      this.state.hintsRemaining--;
-      this.save();
-      return true;
-    }
-    return false;
+  // Hints (per-game allowance lives in GameScreen; this is the lifetime counter)
+  recordHintUsed() {
+    this.state.hintsUsed = (this.state.hintsUsed || 0) + 1;
+    this.save();
   }
-
-  getHintsRemaining() { return this.state.hintsRemaining; }
 
   // Stats
   getStats() {
@@ -175,7 +169,7 @@ export class GameState {
       averageScore: scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0,
       bestScore: scores.length > 0 ? Math.max(...scores) : 0,
       bestRegion: this.getBestRegion(),
-      hintsUsed: 10 - this.state.hintsRemaining,
+      hintsUsed: this.state.hintsUsed || 0,
     };
   }
 

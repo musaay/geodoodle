@@ -6,15 +6,9 @@ import { getRank } from '../data/levels.js';
 export class ComparisonEngine {
   
   compare(canvasManager, drawingEngine, targetPath) {
-    // 1. Get raw points from user's drawing
-    let rawUserPoints = [];
-    const strokes = drawingEngine.getStrokes();
-    for (const stroke of strokes) {
-      if (stroke.color !== 'eraser') {
-        rawUserPoints.push(...stroke.points);
-      }
-    }
-    
+    // 1. Get raw points from user's drawing (eraser strokes remove earlier points)
+    const rawUserPoints = this.getEffectiveUserPoints(drawingEngine.getStrokes());
+
     // Fallback if no drawing
     if (rawUserPoints.length < 3) {
       const padding = 40;
@@ -76,11 +70,20 @@ export class ComparisonEngine {
       totalDeviation += dist;
     }
 
-    const avgDeviation = totalDeviation / N;
-    
+    // 5. Symmetric pass: measure target→user as well, so border sections the
+    // user never drew also count as deviation. Without this, tracing only a
+    // small (accurate) piece of the border would score near 100.
+    let targetDeviation = 0;
+    for (const tp of targetPoly) {
+      const closestOnUser = this.closestPointOnPolygon(tp, alignedUser);
+      targetDeviation += this.distance(tp, closestOnUser);
+    }
+
+    const avgDeviation = (totalDeviation / alignedUser.length + targetDeviation / targetPoly.length) / 2;
+
     // Score based on average deviation vs bounding box diagonal
     // If deviation is 0, score is 100. If deviation is e.g. 40% of diagonal, score is 0.
-    const maxAllowedDeviation = diag * 0.40; 
+    const maxAllowedDeviation = diag * 0.40;
     let score = 100 - (avgDeviation / maxAllowedDeviation) * 100;
     score = Math.max(0, Math.min(100, Math.round(score)));
     
@@ -94,6 +97,25 @@ export class ComparisonEngine {
     };
 
     return { score, rank: getRank(score), visualData };
+  }
+
+  /**
+   * Collect drawn points in chronological order, removing points that a later
+   * eraser stroke passed over — so the score matches what the player sees.
+   */
+  getEffectiveUserPoints(strokes) {
+    let points = [];
+    for (const stroke of strokes) {
+      if (stroke.color === 'eraser') {
+        const radius = stroke.lineWidth * 1.5;
+        points = points.filter(p =>
+          !stroke.points.some(ep => this.distance(p, ep) <= radius)
+        );
+      } else {
+        points = points.concat(stroke.points);
+      }
+    }
+    return points;
   }
 
   // --- Geometry Helpers ---
@@ -115,32 +137,40 @@ export class ComparisonEngine {
   resamplePolygon(points, n) {
     // Standardize format to {x, y}
     const pts = points.map(p => Array.isArray(p) ? {x: p[0], y: p[1]} : {x: p.x, y: p.y});
+    if (pts.length === 0) return [];
+
     const I = this.pathLength(pts) / (n - 1);
+    if (I === 0) return Array.from({ length: n }, () => ({ ...pts[0] }));
+
+    const newPoints = [{ ...pts[0] }];
     let D = 0;
-    const newPoints = [pts[0]];
-    
+    let prev = pts[0];
+
     for (let i = 1; i < pts.length; i++) {
-      let pt1 = pts[i - 1];
-      let pt2 = pts[i];
-      let d = this.distance(pt1, pt2);
-      
-      while (D + d >= I) {
-        const qx = pt1.x + ((I - D) / d) * (pt2.x - pt1.x);
-        const qy = pt1.y + ((I - D) / d) * (pt2.y - pt1.y);
-        const q = {x: qx, y: qy};
+      const curr = pts[i];
+      let d = this.distance(prev, curr);
+
+      // Walk along the segment, emitting a point every interval I.
+      // A long segment can hold several resampled points.
+      while (D + d >= I && d > 0) {
+        const t = (I - D) / d;
+        const q = {
+          x: prev.x + t * (curr.x - prev.x),
+          y: prev.y + t * (curr.y - prev.y),
+        };
         newPoints.push(q);
-        pts.splice(i, 0, q);
-        d = d - (I - D);
-        pt1 = q;
+        d -= I - D;
         D = 0;
+        prev = q;
       }
-      D = D + d;
+
+      D += d;
+      prev = curr;
     }
-    
-    // Fix precision issues at the end
-    if (newPoints.length === n - 1) {
-      newPoints.push(pts[pts.length - 1]);
-    }
+
+    // Fix floating point drift at the end
+    while (newPoints.length < n) newPoints.push({ ...pts[pts.length - 1] });
+    if (newPoints.length > n) newPoints.length = n;
     return newPoints;
   }
 

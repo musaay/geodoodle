@@ -18,6 +18,7 @@ export class ResultScreen {
 
     const session = this.app.gameState.session;
     const isMultiplayer = session.playerCount === 2;
+    this.renderedCanvases = [];
 
     const p1Score = isMultiplayer ? session.p1Score : score;
     const p2Score = isMultiplayer ? session.p2Score : 0;
@@ -92,9 +93,14 @@ export class ResultScreen {
         <button class="btn btn-primary" data-action="retry" style="display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 2rem; border-radius: var(--radius-full); font-size: 1rem; font-weight: 600; box-shadow: var(--shadow); border: none;">
           <i data-lucide="rotate-ccw" style="width: 20px; height: 20px;"></i> ${t('play_again')}
         </button>
-        <button class="btn btn-secondary" data-action="next" style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1.5rem; border-radius: var(--radius-full); font-size: 0.85rem; font-weight: 500; border: none; background: var(--button-bg);">
-          <i data-lucide="home" style="width: 16px; height: 16px;"></i> ${t('back_to_menu')}
-        </button>
+        <div style="display: flex; gap: 0.75rem;">
+          <button class="btn btn-secondary" data-action="share" style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1.5rem; border-radius: var(--radius-full); font-size: 0.85rem; font-weight: 500; border: none; background: var(--button-bg);">
+            <i data-lucide="share-2" style="width: 16px; height: 16px;"></i> ${t('result_share')}
+          </button>
+          <button class="btn btn-secondary" data-action="next" style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1.5rem; border-radius: var(--radius-full); font-size: 0.85rem; font-weight: 500; border: none; background: var(--button-bg);">
+            <i data-lucide="home" style="width: 16px; height: 16px;"></i> ${t('back_to_menu')}
+          </button>
+        </div>
       </div>
     `;
 
@@ -120,7 +126,63 @@ export class ResultScreen {
       this.app.showHome();
     });
 
+    el.querySelector('[data-action="share"]').addEventListener('click', () => {
+      const scoresText = isMultiplayer
+        ? `${t('player')}1: ${p1Score} • ${t('player')}2: ${p2Score}`
+        : `${score}/100`;
+      this.shareResult(regionName, scoresText);
+    });
+
     return el;
+  }
+
+  /** Compose the comparison canvas(es) into a PNG and share/download it */
+  async shareResult(regionName, scoresText) {
+    const canvases = this.renderedCanvases.filter(Boolean);
+    if (canvases.length === 0) return;
+
+    const pad = 24;
+    const titleH = 48;
+    const night = this.app.gameState.getTheme() === 'night';
+
+    const out = document.createElement('canvas');
+    out.width = canvases.reduce((sum, c) => sum + c.width, 0) + pad * (canvases.length + 1);
+    out.height = Math.max(...canvases.map(c => c.height)) + titleH + pad * 2;
+    const ctx = out.getContext('2d');
+
+    ctx.fillStyle = night ? '#18181B' : '#F9F8F6';
+    ctx.fillRect(0, 0, out.width, out.height);
+    ctx.fillStyle = night ? '#ffffff' : '#1a1a1a';
+    ctx.font = '600 22px Outfit, system-ui, sans-serif';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`GeoDoodle • ${regionName} • ${scoresText}`, pad, pad + titleH / 2);
+
+    let x = pad;
+    for (const c of canvases) {
+      ctx.drawImage(c, x, titleH + pad);
+      x += c.width + pad;
+    }
+
+    const blob = await new Promise(resolve => out.toBlob(resolve, 'image/png'));
+    if (!blob) return;
+
+    const file = new File([blob], 'geodoodle.png', { type: 'image/png' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: 'GeoDoodle' });
+      } catch (e) {
+        // User cancelled the share sheet — nothing to do
+      }
+      return;
+    }
+
+    // Fallback: plain download
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'geodoodle.png';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   renderComparisonCanvas(container, visualData, theme) {
@@ -197,5 +259,6 @@ export class ResultScreen {
     }
     
     container.appendChild(displayCanvas);
+    this.renderedCanvases.push(displayCanvas);
   }
 }
