@@ -17,6 +17,10 @@ GeoDoodle is a Turkish-first, bilingual (tr/en) PWA game where players draw coun
 
 No linter is configured.
 
+## Code graph
+
+The repo is indexed in the `codebase-memory` MCP server (project `Users-may-dev-projects-geodoodle`). For structural questions — who calls a function, call chains, finding symbols — prefer its tools (`search_graph`, `trace_path`, `get_code_snippet`, `search_code`) over plain grep. After making substantial code changes, re-run `index_repository` on `/Users/may/dev/projects/geodoodle` so the graph stays current.
+
 ## Git rules (from .agents/AGENTS.md)
 
 - **NEVER** autonomously run `git add`, `git commit`, or `git push`.
