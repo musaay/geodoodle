@@ -1,5 +1,6 @@
-import { levels } from '../data/levels.js';
-import { t } from '../i18n.js';
+import { levels, getRegionById } from '../data/levels.js';
+import { t, getLanguage } from '../i18n.js';
+import { getDailyRegionPool, getDailyRegionId, todayStr } from '../engine/daily.js';
 
 /**
  * HomeScreen - Main menu with game mode selection
@@ -14,6 +15,17 @@ export class HomeScreen {
     const el = document.createElement('div');
     el.className = 'screen ';
     el.id = 'home-screen';
+
+    const dateStr = todayStr();
+    const dailyPool = getDailyRegionPool();
+    const dailyRegionId = getDailyRegionId(dateStr, dailyPool);
+    const dailyRegion = dailyRegionId ? getRegionById(dailyRegionId) : null;
+    const lang = getLanguage();
+    const dailyRegionName = dailyRegion
+      ? (lang === 'en' && dailyRegion.nameEn ? dailyRegion.nameEn : dailyRegion.name)
+      : '';
+    const dailyRecord = this.app.gameState.getDailyRecord(dateStr);
+    const dailyStreak = this.app.gameState.getDailyStreak();
 
     el.innerHTML = `
       <div style="flex:1; display:flex; flex-direction:column; justify-content:center; align-items:center; padding: 2rem 1rem;">
@@ -34,6 +46,20 @@ export class HomeScreen {
             <h3>${t('mode_blind')}</h3>
             <p>${t('mode_blind_desc')}</p>
           </div>
+        </div>
+
+        <div class="card daily-card animate-pop-in" data-action="daily" style="animation-delay: 0.25s; width: 100%; max-width: 400px; margin-top: 1rem; cursor: pointer; display: flex; align-items: center; gap: 1rem; text-align: left;">
+          <span class="icon" style="display: flex; align-items: center;"><i data-lucide="calendar" style="color: var(--accent-primary); width: 2rem; height: 2rem; flex-shrink: 0;"></i></span>
+          <div style="flex: 1; min-width: 0;">
+            <h3 style="font-size: 1rem; margin: 0;">${t('daily_title')}</h3>
+            <p style="margin: 0.15rem 0 0; color: var(--text-secondary); font-size: 0.9rem;">${dailyRegionName}</p>
+            ${dailyRecord ? `<p style="margin: 0.15rem 0 0; color: var(--text-secondary); font-size: 0.8rem;">${t('daily_today_score', { score: dailyRecord.score })}</p>` : ''}
+          </div>
+          ${dailyStreak >= 1 ? `
+            <span style="display: flex; align-items: center; gap: 0.25rem; color: var(--warning, #f39c12); font-weight: 600; flex-shrink: 0;">
+              <i data-lucide="flame" style="width: 1.1rem; height: 1.1rem;"></i>${t('daily_streak', { count: dailyStreak })}
+            </span>
+          ` : ''}
         </div>
 
         <div style="margin-top: 1.5rem; display: flex; flex-direction: column; align-items: center; gap: 0.5rem;">
@@ -87,6 +113,15 @@ export class HomeScreen {
       this.app.gameState.session.currentPlayer = 1;
       this.app.showLevelSelect('blind');
     });
+    if (dailyRegionId) {
+      el.querySelector('[data-action="daily"]').addEventListener('click', () => {
+        const session = this.app.gameState.session;
+        session.playerCount = 1;
+        session.currentPlayer = 1;
+        session.isDaily = true;
+        this.app.startGame(dailyRegionId, 'blind');
+      });
+    }
     el.querySelector('[data-action="levels"]').addEventListener('click', () => {
       this.app.showLevelSelect();
     });

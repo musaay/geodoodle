@@ -1,5 +1,6 @@
 import { levels } from '../data/levels.js';
 import { setLanguage } from '../i18n.js';
+import { computeStreak, todayStr } from './daily.js';
 
 const STORAGE_KEY = 'geodoodle_state';
 
@@ -11,6 +12,7 @@ const DEFAULT_STATE = {
   unlockedLevels: [1],
   firstTime: true,
   language: 'tr',
+  daily: {}, // 'YYYY-MM-DD' -> { regionId, score }
 };
 
 /**
@@ -27,7 +29,8 @@ export class GameState {
       p1Score: null,
       p2Score: null,
       currentRegionId: null,
-      currentMode: null
+      currentMode: null,
+      isDaily: false,
     };
   }
 
@@ -149,6 +152,24 @@ export class GameState {
       else if (region.bestScore > 0) stars += 1;
     }
     return stars;
+  }
+
+  // Daily Challenge
+  recordDailyResult(regionId, score) {
+    const date = todayStr();
+    const existing = this.state.daily[date];
+    if (!existing || score > existing.score) {
+      this.state.daily[date] = { regionId, score };
+    }
+    this.save();
+  }
+
+  getDailyRecord(dateStr) {
+    return this.state.daily[dateStr] || null;
+  }
+
+  getDailyStreak() {
+    return computeStreak(Object.keys(this.state.daily), todayStr());
   }
 
   // Hints (per-game allowance lives in GameScreen; this is the lifetime counter)

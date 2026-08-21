@@ -35,7 +35,9 @@ export class GameScreen {
     el.id = 'game-screen';
     el.style.padding = '0.5rem';
 
-    const modeText = mode === 'blind' ? t('mode_text_blind') : t('mode_text_trace');
+    const modeText = this.app.gameState.session.isDaily
+      ? t('mode_text_daily')
+      : mode === 'blind' ? t('mode_text_blind') : t('mode_text_trace');
     const lang = getLanguage();
     const rName = lang === 'en' && this.region.nameEn ? this.region.nameEn : this.region.name;
     const regionName = rName.toUpperCase();
@@ -308,6 +310,9 @@ export class GameScreen {
         result.score,
         result.rank
       );
+      if (session.isDaily) {
+        this.app.gameState.recordDailyResult(this.region.id, result.score);
+      }
     }
 
     this.cleanup();
@@ -343,7 +348,9 @@ export class GameScreen {
     if (rnEl) rnEl.textContent = rName.toUpperCase();
 
     // Update mode text
-    const modeText = this.mode === 'blind' ? t('mode_text_blind') : t('mode_text_trace');
+    const modeText = this.app.gameState.session.isDaily
+      ? t('mode_text_daily')
+      : this.mode === 'blind' ? t('mode_text_blind') : t('mode_text_trace');
     const mtEl = el.querySelector('#mode-text');
     if (mtEl) mtEl.textContent = modeText;
 

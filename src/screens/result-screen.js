@@ -26,7 +26,7 @@ export class ResultScreen {
     const p1Visual = isMultiplayer ? session.p1VisualData : visualData;
     const p2Visual = isMultiplayer ? visualData : null;
 
-    const modeText = mode === 'blind' ? t('mode_text_blind') : t('mode_text_trace');
+    const modeText = session.isDaily ? t('mode_text_daily') : (mode === 'blind' ? t('mode_text_blind') : t('mode_text_trace'));
     const lang = getLanguage();
     const rName = lang === 'en' && region.nameEn ? region.nameEn : region.name;
     const regionName = rName.toUpperCase();

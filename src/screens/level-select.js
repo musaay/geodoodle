@@ -78,6 +78,7 @@ export class LevelSelectScreen {
 
         if (isUnlocked) {
           card.addEventListener('click', () => {
+            this.app.gameState.session.isDaily = false;
             this.app.startGame(regionId, level.mode);
           });
         }

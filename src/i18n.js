@@ -23,6 +23,9 @@ const translations = {
     statistics: 'İstatistikler',
     regions: 'bölge',
     fun_fact: 'Bilgi: GeoDoodle\'da {count} farklı bölge seni bekliyor!',
+    daily_title: 'Günün Bölgesi',
+    daily_streak: '{count} gün seri',
+    daily_today_score: 'Bugün: {score}',
 
     // Level Select Screen
     levels_trace: 'Eğitim Seviyeleri',
@@ -35,6 +38,7 @@ const translations = {
     hint_title: 'İpucu ({count} kaldı)',
     mode_text_blind: 'HAFIZADAN',
     mode_text_trace: 'EĞİTİM',
+    mode_text_daily: 'GÜNÜN BÖLGESİ',
     tool_thin_title: 'İnce Kalem',
     tool_thin: 'İnce',
     tool_medium_title: 'Orta Kalem',
@@ -119,6 +123,9 @@ const translations = {
     statistics: 'Statistics',
     regions: 'regions',
     fun_fact: 'Did you know: {count} different regions are waiting for you!',
+    daily_title: 'Daily Challenge',
+    daily_streak: '{count} day streak',
+    daily_today_score: 'Today: {score}',
 
     // Level Select Screen
     levels_trace: 'Training Levels',
@@ -131,6 +138,7 @@ const translations = {
     hint_title: 'Hint ({count} left)',
     mode_text_blind: 'FROM MEMORY',
     mode_text_trace: 'TRAINING',
+    mode_text_daily: 'DAILY CHALLENGE',
     tool_thin_title: 'Thin Pen',
     tool_thin: 'Thin',
     tool_medium_title: 'Medium Pen',

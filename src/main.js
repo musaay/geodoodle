@@ -9,16 +9,16 @@ import './styles/index.css';
 import './styles/animations.css';
 import {
   createIcons,
-  ArrowLeft, ArrowRight, BarChart2, Brain, CheckCircle2, Eraser, Home,
-  Lightbulb, Lock, Map, Moon, Paintbrush, Pen, PenTool, RotateCcw, Share2,
-  Star, Sun, Target, Trash2, TrendingUp, Undo2, User, Users,
+  ArrowLeft, ArrowRight, BarChart2, Brain, Calendar, CheckCircle2, Eraser,
+  Flame, Home, Lightbulb, Lock, Map, Moon, Paintbrush, Pen, PenTool,
+  RotateCcw, Share2, Star, Sun, Target, Trash2, TrendingUp, Undo2, User, Users,
 } from 'lucide';
 
 // Only the icons the app actually uses, so the rest of the set is tree-shaken
 const icons = {
-  ArrowLeft, ArrowRight, BarChart2, Brain, CheckCircle2, Eraser, Home,
-  Lightbulb, Lock, Map, Moon, Paintbrush, Pen, PenTool, RotateCcw, Share2,
-  Star, Sun, Target, Trash2, TrendingUp, Undo2, User, Users,
+  ArrowLeft, ArrowRight, BarChart2, Brain, Calendar, CheckCircle2, Eraser,
+  Flame, Home, Lightbulb, Lock, Map, Moon, Paintbrush, Pen, PenTool,
+  RotateCcw, Share2, Star, Sun, Target, Trash2, TrendingUp, Undo2, User, Users,
 };
 import { getLanguage } from './i18n.js';
 import { GameState } from './engine/game-state.js';
