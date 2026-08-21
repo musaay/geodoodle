@@ -79,11 +79,19 @@ export class ComparisonEngine {
       targetDeviation += this.distance(tp, closestOnUser);
     }
 
-    const avgDeviation = (totalDeviation / alignedUser.length + targetDeviation / targetPoly.length) / 2;
+    // Let the worse direction dominate instead of averaging it away: a small,
+    // accurate blob scores well on user->target (every user point is close to
+    // SOME target point) even though it covers only a fraction of the border,
+    // and a partial trace scores well on target->user for the same reason in
+    // reverse. Blending 70/30 toward the worse side keeps either failure mode
+    // from being hidden by the other direction looking good.
+    const a = totalDeviation / alignedUser.length;
+    const b = targetDeviation / targetPoly.length;
+    const avgDeviation = 0.3 * Math.min(a, b) + 0.7 * Math.max(a, b);
 
     // Score based on average deviation vs bounding box diagonal
-    // If deviation is 0, score is 100. If deviation is e.g. 40% of diagonal, score is 0.
-    const maxAllowedDeviation = diag * 0.40;
+    // If deviation is 0, score is 100. If deviation is e.g. 20% of diagonal, score is 0.
+    const maxAllowedDeviation = diag * 0.20;
     let score = 100 - (avgDeviation / maxAllowedDeviation) * 100;
     score = Math.max(0, Math.min(100, Math.round(score)));
     

@@ -54,6 +54,41 @@ function traceOfScaledSquare(cm, fraction = 1) {
   return points;
 }
 
+// A full trace of the border, but wobbling off it by a deterministic (non-random)
+// sine/cosine offset — approximates a shaky-handed but genuine attempt.
+function jitteredTraceOfScaledSquare(cm, amplitude) {
+  return traceOfScaledSquare(cm).map((p, i) => ({
+    x: p.x + Math.sin(i * 0.3) * amplitude,
+    y: p.y + Math.cos(i * 0.2) * amplitude,
+  }));
+}
+
+// A small closed blob (not tracing the border at all) sitting inside the
+// target's bounding box, sized as a fraction of the target's width/height —
+// mirrors the real bug report (a small ellipse scoring 76 on Czechia).
+function smallBlobInsideTarget(cm, fraction = 0.25) {
+  const scaled = cm.normalizePathToCanvas(SQUARE_PATH, 40).map(([x, y]) => ({ x, y }));
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const p of scaled) {
+    minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+    minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+  }
+  const width = maxX - minX, height = maxY - minY;
+  const blobW = width * fraction, blobH = height * fraction;
+  const cx = minX + width * 0.3, cy = minY + height * 0.3;
+  const corners = [[cx, cy], [cx + blobW, cy], [cx + blobW, cy + blobH], [cx, cy + blobH], [cx, cy]];
+  const points = [];
+  for (let s = 0; s < corners.length - 1; s++) {
+    const a = { x: corners[s][0], y: corners[s][1] };
+    const b = { x: corners[s + 1][0], y: corners[s + 1][1] };
+    for (let i = 0; i < 50; i++) {
+      const t = i / 50;
+      points.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+    }
+  }
+  return points;
+}
+
 describe('resamplePolygon', () => {
   it('returns the requested number of equally spaced points', () => {
     const engine = new ComparisonEngine();
@@ -111,7 +146,36 @@ describe('compare', () => {
       SQUARE_PATH
     ).score;
     expect(partial).toBeLessThan(full - 20);
-    expect(partial).toBeLessThan(75);
+    expect(partial).toBeLessThanOrEqual(45);
+  });
+
+  it('scores a shaky-but-genuine trace in a mid-range band, not near-perfect and not near-zero', () => {
+    const engine = new ComparisonEngine();
+    const cm = makeCanvasManagerStub();
+    const jittered = engine.compare(
+      cm,
+      makeDrawingEngineStub([penStroke(jitteredTraceOfScaledSquare(cm, 80))]),
+      SQUARE_PATH
+    ).score;
+    const blob = engine.compare(
+      cm,
+      makeDrawingEngineStub([penStroke(smallBlobInsideTarget(cm))]),
+      SQUARE_PATH
+    ).score;
+    expect(jittered).toBeGreaterThanOrEqual(55);
+    expect(jittered).toBeLessThanOrEqual(90);
+    expect(jittered).toBeGreaterThan(blob);
+  });
+
+  it('heavily penalizes a small blob that never traces the border (regression for #4)', () => {
+    const engine = new ComparisonEngine();
+    const cm = makeCanvasManagerStub();
+    const blob = engine.compare(
+      cm,
+      makeDrawingEngineStub([penStroke(smallBlobInsideTarget(cm))]),
+      SQUARE_PATH
+    ).score;
+    expect(blob).toBeLessThanOrEqual(35);
   });
 
   it('ignores strokes that were fully erased', () => {
