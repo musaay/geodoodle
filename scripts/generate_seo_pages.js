@@ -2,8 +2,8 @@
 // Generates static, JS-free SEO pages into dist/ after `vite build`.
 // Run as part of `npm run build` (see package.json).
 //
-// - dist/bolge/<id>/index.html  — one bilingual landing page per region
-// - dist/gizlilik/index.html    — bilingual privacy policy
+// - dist/region/<id>/index.html — one bilingual landing page per region
+// - dist/privacy/index.html     — bilingual privacy policy
 // - dist/sitemap.xml            — root + all generated pages
 // - dist/robots.txt
 
@@ -108,7 +108,7 @@ function regionPage(region) {
   const nameEn = escapeHtml(region.nameEn);
   const fact = escapeHtml(region.funFact);
   const title = `${region.name} Sınırını Çiz | GeoDoodle — Draw the Border of ${region.nameEn}`;
-  const canonical = `${SITE}/bolge/${region.id}/`;
+  const canonical = `${SITE}/region/${region.id}/`;
 
   const body = `<main>
   <a class="back" href="${SITE}/">&larr; GeoDoodle</a>
@@ -137,7 +137,7 @@ function regionPage(region) {
 function privacyPage() {
   const title = 'Gizlilik Politikası | GeoDoodle — Privacy Policy';
   const description = "GeoDoodle gizlilik politikası: hesap yok, ilerlemen yalnızca tarayıcında (localStorage) saklanır, kişisel veri toplanmaz.";
-  const canonical = `${SITE}/gizlilik/`;
+  const canonical = `${SITE}/privacy/`;
   const repoUrl = 'https://github.com/musaay/geodoodle';
 
   const body = `<main>
@@ -185,14 +185,14 @@ function main() {
   const regions = getAllRegions();
 
   for (const region of regions) {
-    writeFile(`bolge/${region.id}/index.html`, regionPage(region));
+    writeFile(`region/${region.id}/index.html`, regionPage(region));
   }
-  writeFile('gizlilik/index.html', privacyPage());
+  writeFile('privacy/index.html', privacyPage());
 
   const urls = [
     `${SITE}/`,
-    `${SITE}/gizlilik/`,
-    ...regions.map((r) => `${SITE}/bolge/${r.id}/`),
+    `${SITE}/privacy/`,
+    ...regions.map((r) => `${SITE}/region/${r.id}/`),
   ];
   const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">

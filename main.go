@@ -68,9 +68,25 @@ func gzipMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// legacyRedirects permanently redirects the old Turkish-language SEO paths
+// (briefly live, and included in the submitted sitemap) to their English
+// replacements: /bolge/<id>/ -> /region/<id>/, /gizlilik/ -> /privacy/.
+func legacyRedirects(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/gizlilik" || r.URL.Path == "/gizlilik/":
+			http.Redirect(w, r, "/privacy/", http.StatusMovedPermanently)
+		case r.URL.Path == "/bolge" || strings.HasPrefix(r.URL.Path, "/bolge/"):
+			http.Redirect(w, r, "/region"+strings.TrimPrefix(r.URL.Path, "/bolge"), http.StatusMovedPermanently)
+		default:
+			next.ServeHTTP(w, r)
+		}
+	})
+}
+
 // noDirListing blocks http.FileServer's directory index pages (e.g. /assets/),
 // while still allowing directories that hold a real index.html — such as the
-// generated /bolge/<id>/ and /gizlilik/ SEO pages — to serve normally.
+// generated /region/<id>/ and /privacy/ SEO pages — to serve normally.
 func noDirListing(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" && strings.HasSuffix(r.URL.Path, "/") {
@@ -95,7 +111,7 @@ func main() {
 	fs := http.FileServer(http.Dir("./dist"))
 
 	mux := http.NewServeMux()
-	mux.Handle("/", noDirListing(cacheHeaders(gzipMiddleware(fs))))
+	mux.Handle("/", legacyRedirects(noDirListing(cacheHeaders(gzipMiddleware(fs)))))
 
 	// Configure server with explicit timeouts to prevent Goroutine/memory leaks
 	// from stale keep-alive connections (especially behind load balancers like Railway)
