@@ -2,19 +2,19 @@
   "name": "GeoDoodle: Sınırları Çiz",
   "short_name": "GeoDoodle",
   "description": "Ülke ve il sınırlarını çizerek coğrafya bilgini test et!",
-  "start_url": "/",
+  "start_url": "./",
   "display": "standalone",
   "orientation": "portrait",
   "theme_color": "#1a1a2e",
   "background_color": "#0f0f1a",
   "icons": [
     {
-      "src": "/icons/icon-192.png",
+      "src": "icons/icon-192.png",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "/icons/icon-512.png",
+      "src": "icons/icon-512.png",
       "sizes": "512x512",
       "type": "image/png"
     }

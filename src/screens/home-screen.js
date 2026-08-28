@@ -90,7 +90,7 @@ export class HomeScreen {
           <span>${t('fun_fact', { count: levels.reduce((sum, l) => sum + l.regions.length, 0) })}</span>
         </div>
 
-        <a href="/privacy/" style="margin-top: 1rem; color: var(--text-secondary); font-size: 0.75rem; text-decoration: underline;">${t('privacy_link')}</a>
+        ${import.meta.env.VITE_PORTAL === '1' ? '' : `<a href="/privacy/" style="margin-top: 1rem; color: var(--text-secondary); font-size: 0.75rem; text-decoration: underline;">${t('privacy_link')}</a>`}
       </div>
     `;
 

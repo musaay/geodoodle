@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build && node scripts/generate_seo_pages.js",
+    "build:portal": "VITE_PORTAL=1 vite build --base ./ --outDir dist-portal",
     "preview": "vite preview",
     "test": "vitest run"
   },

@@ -183,6 +183,9 @@ class GeoDoodleApp {
 
   /** Register PWA service worker */
   async registerSW() {
+    // Portal builds are hosted on someone else's origin — /sw.js wouldn't
+    // resolve there, and there's no PWA install flow to support anyway.
+    if (import.meta.env.VITE_PORTAL === '1') return;
     if ('serviceWorker' in navigator) {
       try {
         await navigator.serviceWorker.register('/sw.js');
