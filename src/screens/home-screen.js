@@ -89,6 +89,8 @@ export class HomeScreen {
           <i data-lucide="lightbulb" style="color: var(--warning, #f39c12);"></i>
           <span>${t('fun_fact', { count: levels.reduce((sum, l) => sum + l.regions.length, 0) })}</span>
         </div>
+
+        <a href="/gizlilik/" style="margin-top: 1rem; color: var(--text-secondary); font-size: 0.75rem; text-decoration: underline;">${t('privacy_link')}</a>
       </div>
     `;
 

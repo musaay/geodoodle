@@ -1,7 +1,7 @@
 // GeoDoodle Service Worker - Offline caching
 // Bump the version on breaking cache changes; HTML is network-first so new
 // deploys reach users without a version bump.
-const CACHE_NAME = 'geodoodle-v2';
+const CACHE_NAME = 'geodoodle-v3';
 
 const STATIC_ASSETS = [
   '/',
@@ -45,6 +45,12 @@ const cachePut = (request, response) => {
 
 self.addEventListener('fetch', (event) => {
   const { request } = event;
+
+  // Never cache cross-origin requests (analytics/ads scripts, etc.) — just
+  // pass them straight through to the network.
+  if (new URL(request.url).origin !== self.location.origin) {
+    return;
+  }
 
   // HTML: network-first so deploys propagate; fall back to cache offline.
   if (isHtmlRequest(request)) {

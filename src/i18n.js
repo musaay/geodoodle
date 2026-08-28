@@ -26,6 +26,7 @@ const translations = {
     daily_title: 'Günün Bölgesi',
     daily_streak: '{count} gün seri',
     daily_today_score: 'Bugün: {score}',
+    privacy_link: 'Gizlilik',
 
     // Level Select Screen
     levels_trace: 'Eğitim Seviyeleri',
@@ -126,6 +127,7 @@ const translations = {
     daily_title: 'Daily Challenge',
     daily_streak: '{count} day streak',
     daily_today_score: 'Today: {score}',
+    privacy_link: 'Privacy',
 
     // Level Select Screen
     levels_trace: 'Training Levels',

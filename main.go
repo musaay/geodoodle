@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -30,7 +31,7 @@ var compressibleExts = map[string]bool{
 }
 
 func isCompressible(p string) bool {
-	if p == "/" {
+	if p == "/" || strings.HasSuffix(p, "/") {
 		return true
 	}
 	return compressibleExts[strings.ToLower(path.Ext(p))]
@@ -67,12 +68,17 @@ func gzipMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// noDirListing blocks http.FileServer's directory index pages (e.g. /assets/).
+// noDirListing blocks http.FileServer's directory index pages (e.g. /assets/),
+// while still allowing directories that hold a real index.html — such as the
+// generated /bolge/<id>/ and /gizlilik/ SEO pages — to serve normally.
 func noDirListing(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" && strings.HasSuffix(r.URL.Path, "/") {
-			http.NotFound(w, r)
-			return
+			indexPath := filepath.Join("dist", filepath.Clean(r.URL.Path), "index.html")
+			if _, err := os.Stat(indexPath); err != nil {
+				http.NotFound(w, r)
+				return
+			}
 		}
 		next.ServeHTTP(w, r)
 	})
