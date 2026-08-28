@@ -59,6 +59,16 @@ a.cta {
 }
 `.trim();
 
+// Google tag (gtag.js) — same snippet as index.html, kept in one place so
+// it's not duplicated across every generated page.
+const GTAG_SNIPPET = `<script async src="https://www.googletagmanager.com/gtag/js?id=G-8BYQ9HJF28"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-8BYQ9HJF28');
+</script>`;
+
 function escapeHtml(str) {
   return String(str)
     .replace(/&/g, '&amp;')
@@ -80,6 +90,7 @@ function pageShell({ title, description, canonical, bodyHtml }) {
 <link rel="alternate" hreflang="en" href="${canonical}" />
 <link rel="alternate" hreflang="x-default" href="${canonical}" />
 <style>${PAGE_CSS}</style>
+${GTAG_SNIPPET}
 </head>
 <body>
 ${bodyHtml}
@@ -137,7 +148,8 @@ function privacyPage() {
     <h2>Türkçe</h2>
     <p>GeoDoodle'da hesap oluşturmazsın. İlerlemen (tamamlanan bölgeler, en iyi skorların, yıldızların, günlük seri sayacın) yalnızca kendi cihazının tarayıcısındaki yerel depolama alanında (localStorage) tutulur; hiçbir sunucuya gönderilmez.</p>
     <p>GeoDoodle bugün itibarıyla seni tanımlayan hiçbir kişisel veri toplamaz.</p>
-    <p>Üçüncü taraf reklam ve analitik hizmetleri kullanılmaya başlandığında bu sayfa güncellenecektir.</p>
+    <p>Anonim kullanım istatistikleri (sayfa görüntülemeleri, oynanan oyunlar) için Google Analytics kullanıyoruz. Bu veriler Google tarafından işlenir ve çerezler kullanır; ancak bizim tarafımızdan seni tanımlayan hiçbir kişisel veri toplanmaz.</p>
+    <p>Üçüncü taraf reklam hizmetleri kullanılmaya başlandığında bu sayfa güncellenecektir.</p>
     <p>Sorularınız için: <a href="${repoUrl}">${repoUrl}</a></p>
   </section>
 
@@ -147,7 +159,8 @@ function privacyPage() {
     <h2>English</h2>
     <p>GeoDoodle does not require an account. Your progress (completed regions, best scores, stars, daily streak) is stored only in your device's browser local storage (localStorage) and is never sent to a server.</p>
     <p>As of today, GeoDoodle does not collect any personally identifying data.</p>
-    <p>This page will be updated if and when third-party advertising or analytics services are introduced.</p>
+    <p>We use Google Analytics for anonymous usage statistics (page views, game plays). This data is processed by Google and involves cookies; however, no personally identifying data is collected by us.</p>
+    <p>This page will be updated if and when third-party advertising services are introduced.</p>
     <p>Questions: <a href="${repoUrl}">${repoUrl}</a></p>
   </section>
 

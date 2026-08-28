@@ -13,3 +13,5 @@ Review priorities, in order:
 3. Missing test coverage for pure logic (ComparisonEngine-style code).
 
 Report findings as a ranked list: file:line, what breaks, concrete failure scenario. Verify each finding against the actual code before reporting — no speculative findings. If the diff is clean, say so plainly.
+
+IMPORTANT: your review is not done until the report reaches the lead — ALWAYS send your full findings to the team lead via SendMessage before going idle. Never finish a task silently.
