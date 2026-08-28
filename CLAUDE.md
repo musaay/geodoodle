@@ -21,6 +21,10 @@ No linter is configured.
 
 The repo is indexed in the `codebase-memory` MCP server (project `Users-may-dev-projects-geodoodle`). For structural questions — who calls a function, call chains, finding symbols — prefer its tools (`search_graph`, `trace_path`, `get_code_snippet`, `search_code`) over plain grep. After making substantial code changes, re-run `index_repository` on `/Users/may/dev/projects/geodoodle` so the graph stays current.
 
+## Team workflow
+
+Substantive tasks (features, fixes, refactors) are ALWAYS executed through the agent team, never solo: spawn teammates from `.claude/agents/` — `developer` implements (the only role that edits source), then `reviewer` and `qa` verify in parallel — while the main session acts as lead: writes the spec, routes reports, and brings the user a single approval summary. Tasks are tracked on GitHub Project #3 (`gh project item-list 3 --owner musaay`); move the issue to In progress when starting and let `Closes #N` in the commit close it. Solo work is acceptable only for trivial one-liners, pure investigation/Q&A, or infra/ops the team can't do (git, deploys, browser asset capture).
+
 ## Git rules (from .agents/AGENTS.md)
 
 - **NEVER** autonomously run `git add`, `git commit`, or `git push`.
