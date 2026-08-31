@@ -63,11 +63,12 @@
 
 <h1>GeoDoodle Asset Generator</h1>
 <p class="lede">
-  Standalone, dependency-free renders for the OG/share image and PWA app icons,
-  built from the same Turkey border path data and "Paper &amp; Ink" day palette
-  as the app. Screenshot or use the download buttons to export, then save as:
-  <code>public/og-image.png</code>, <code>public/icons/icon-512.png</code>,
-  <code>public/icons/icon-192.png</code>.
+  Standalone, dependency-free renders for the OG/share image, PWA app icons, and
+  CrazyGames cover images, built from the same Turkey border path data and
+  "Paper &amp; Ink" day palette as the app. Screenshot or use the download
+  buttons to export, then save as: <code>public/og-image.png</code>,
+  <code>public/icons/icon-512.png</code>, <code>public/icons/icon-192.png</code>,
+  or upload the three cover PNGs directly to the CrazyGames Details step.
 </p>
 
 <div class="card">
@@ -89,6 +90,29 @@
       <canvas id="icon-192" width="192" height="192"></canvas>
       <button data-download="icon-192" data-filename="icon-192.png">Download PNG</button>
     </div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>CrazyGames cover images</h2>
+  <div class="meta">Three exact sizes required by the CrazyGames Details step.</div>
+
+  <div style="margin-bottom: 2rem;">
+    <div class="meta">Landscape &mdash; 1920&times;1080</div>
+    <canvas id="cover-landscape" width="1920" height="1080"></canvas>
+    <button data-download="cover-landscape" data-filename="cover-landscape-1920x1080.png">Download PNG</button>
+  </div>
+
+  <div style="margin-bottom: 2rem;">
+    <div class="meta">Portrait &mdash; 800&times;1200</div>
+    <canvas id="cover-portrait" width="800" height="1200"></canvas>
+    <button data-download="cover-portrait" data-filename="cover-portrait-800x1200.png">Download PNG</button>
+  </div>
+
+  <div>
+    <div class="meta">Square &mdash; 800&times;800</div>
+    <canvas id="cover-square" width="800" height="800"></canvas>
+    <button data-download="cover-square" data-filename="cover-square-800x800.png">Download PNG</button>
   </div>
 </div>
 
@@ -172,6 +196,129 @@ function drawOgImage() {
   ctx.stroke();
 }
 
+// Shared bilingual tagline used by the cover images (og-image's tagline is
+// TR-only; these are public storefront assets, so both languages appear,
+// stacked TR-over-EN — same pairing pattern as the bilingual region page
+// headers in scripts/generate_seo_pages.js).
+const TAGLINE_TR = 'Sınırları Çiz';
+const TAGLINE_EN = 'Draw the Borders';
+
+function drawDashedTurkey(ctx, box, { lineWidth, dash }) {
+  const pts = normalizeToCanvas(TURKEY_PATH, box.w, box.h, box.padding)
+    .map(([x, y]) => [x + box.x, y + box.y]);
+  strokePath(ctx, pts);
+  ctx.fillStyle = INK_FAINT;
+  ctx.fill();
+  ctx.setLineDash(dash);
+  ctx.lineWidth = lineWidth;
+  ctx.strokeStyle = INK_SOFT;
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function drawCoverLandscape() {
+  const canvas = document.getElementById('cover-landscape');
+  const ctx = canvas.getContext('2d');
+  const { width, height } = canvas;
+
+  ctx.fillStyle = PAPER;
+  ctx.fillRect(0, 0, width, height);
+
+  // Silhouette on the right, roomy left column reserved for text so the
+  // wordmark/tagline never risk overlapping it.
+  drawDashedTurkey(ctx, { x: 1000, y: 70, w: 850, h: 940, padding: 30 }, { lineWidth: 6, dash: [16, 12] });
+
+  ctx.textBaseline = 'alphabetic';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = INK;
+  ctx.font = "700 150px 'Outfit', system-ui, -apple-system, sans-serif";
+  ctx.fillText('GeoDoodle', 110, 430);
+
+  ctx.fillStyle = '#6B7280';
+  ctx.font = "500 58px 'Outfit', system-ui, -apple-system, sans-serif";
+  ctx.fillText(TAGLINE_TR, 114, 500);
+  ctx.font = "500 40px 'Outfit', system-ui, -apple-system, sans-serif";
+  ctx.fillText(TAGLINE_EN, 114, 552);
+
+  ctx.strokeStyle = 'rgba(28, 28, 30, 0.1)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(114, 592);
+  ctx.lineTo(114 + 360, 592);
+  ctx.stroke();
+}
+
+function drawCoverPortrait() {
+  const canvas = document.getElementById('cover-portrait');
+  const ctx = canvas.getContext('2d');
+  const { width, height } = canvas;
+  const centerX = width / 2;
+
+  ctx.fillStyle = PAPER;
+  ctx.fillRect(0, 0, width, height);
+
+  // Wordmark + bilingual tagline, centered at the top.
+  ctx.textBaseline = 'alphabetic';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = INK;
+  ctx.font = "700 92px 'Outfit', system-ui, -apple-system, sans-serif";
+  ctx.fillText('GeoDoodle', centerX, 150);
+
+  ctx.fillStyle = '#6B7280';
+  ctx.font = "500 36px 'Outfit', system-ui, -apple-system, sans-serif";
+  ctx.fillText(TAGLINE_TR, centerX, 202);
+  ctx.font = "500 26px 'Outfit', system-ui, -apple-system, sans-serif";
+  ctx.fillText(TAGLINE_EN, centerX, 236);
+
+  // Large centered silhouette. Turkey's bounding box is naturally wide and
+  // flat (~3:1), so the box is sized to that ratio (not a tall box, which
+  // would leave the shape stranded with huge empty gaps above/below) and
+  // vertically centered in the space between the tagline and the footer.
+  drawDashedTurkey(ctx, { x: 20, y: 535, w: 760, h: 290, padding: 24 }, { lineWidth: 5, dash: [14, 10] });
+
+  // Small site URL footer.
+  ctx.strokeStyle = 'rgba(28, 28, 30, 0.1)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(centerX - 90, 1108);
+  ctx.lineTo(centerX + 90, 1108);
+  ctx.stroke();
+
+  ctx.fillStyle = '#6B7280';
+  ctx.font = "600 26px 'Outfit', system-ui, -apple-system, sans-serif";
+  ctx.fillText('www.geodoodle.com', centerX, 1150);
+}
+
+function drawCoverSquare() {
+  const canvas = document.getElementById('cover-square');
+  const ctx = canvas.getContext('2d');
+  const { width, height } = canvas;
+  const centerX = width / 2;
+
+  ctx.fillStyle = PAPER;
+  ctx.fillRect(0, 0, width, height);
+
+  // Centered wordmark only (no tagline, per the CrazyGames square spec) with
+  // a short rule echoing the wordmark/tagline-rule pairing used elsewhere.
+  ctx.textBaseline = 'alphabetic';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = INK;
+  ctx.font = "700 88px 'Outfit', system-ui, -apple-system, sans-serif";
+  ctx.fillText('GeoDoodle', centerX, 130);
+
+  ctx.strokeStyle = 'rgba(28, 28, 30, 0.1)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(centerX - 70, 160);
+  ctx.lineTo(centerX + 70, 160);
+  ctx.stroke();
+
+  // Large centered silhouette below the wordmark — box sized to Turkey's
+  // natural ~3:1 aspect ratio (see the note in drawCoverPortrait) so it
+  // actually fills the space instead of floating in a mostly-empty box.
+  drawDashedTurkey(ctx, { x: 60, y: 320, w: 680, h: 260, padding: 24 }, { lineWidth: 5, dash: [14, 10] });
+}
+
 function drawIcon(canvasId) {
   const canvas = document.getElementById(canvasId);
   const ctx = canvas.getContext('2d');
@@ -215,6 +362,9 @@ function downloadCanvas(canvasId, filename) {
 drawOgImage();
 drawIcon('icon-512');
 drawIcon('icon-192');
+drawCoverLandscape();
+drawCoverPortrait();
+drawCoverSquare();
 
 document.querySelectorAll('button[data-download]').forEach((btn) => {
   btn.addEventListener('click', () => {
