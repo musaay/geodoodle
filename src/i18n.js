@@ -75,6 +75,8 @@ const translations = {
     back_to_menu: 'MENÜYE DÖN',
     result_share: 'PAYLAŞ',
     player: 'O', // Oyuncu (O1, O2)
+    share_text_normal: 'GeoDoodle\'da {region} sınırını çizdim: {score}/100!',
+    share_text_daily: 'Günün Bölgesi\'nde {score} aldım — beni geçebilir misin?',
 
     // Stats Screen
     stats_total_drawings: 'Toplam Çizim',
@@ -176,6 +178,8 @@ const translations = {
     back_to_menu: 'BACK TO MENU',
     result_share: 'SHARE',
     player: 'P', // Player (P1, P2)
+    share_text_normal: 'I drew {region}\'s border on GeoDoodle: {score}/100!',
+    share_text_daily: 'I scored {score} on today\'s Daily Challenge — can you beat me?',
 
     // Stats Screen
     stats_total_drawings: 'Total Drawings',

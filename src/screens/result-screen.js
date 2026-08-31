@@ -1,4 +1,30 @@
 import { t, getLanguage } from '../i18n.js';
+import { getRank } from '../data/levels.js';
+
+/**
+ * Shrink `text` (drawn in the given weight, starting at `baseSize`px) until
+ * it fits within `maxWidth`, stepping the font size down to `floor` × base;
+ * if it still doesn't fit at the floor, ellipsize it. Leaves `ctx.font` set
+ * to the size actually used. Returns `{ text, size }`.
+ */
+function fitText(ctx, text, baseSize, weight, maxWidth, floor = 0.6) {
+  const minSize = Math.max(1, Math.round(baseSize * floor));
+  let size = baseSize;
+  const setFont = (s) => { ctx.font = `${weight} ${s}px Outfit, system-ui, sans-serif`; };
+  setFont(size);
+  while (ctx.measureText(text).width > maxWidth && size > minSize) {
+    size -= 1;
+    setFont(size);
+  }
+  let fitted = text;
+  if (ctx.measureText(fitted).width > maxWidth) {
+    while (fitted.length > 1 && ctx.measureText(fitted + '…').width > maxWidth) {
+      fitted = fitted.slice(0, -1);
+    }
+    if (fitted.length < text.length) fitted += '…';
+  }
+  return { text: fitted, size };
+}
 
 export class ResultScreen {
   constructor(app) {
@@ -127,49 +153,155 @@ export class ResultScreen {
     });
 
     el.querySelector('[data-action="share"]').addEventListener('click', () => {
-      const scoresText = isMultiplayer
-        ? `${t('player')}1: ${p1Score} • ${t('player')}2: ${p2Score}`
-        : `${score}/100`;
-      this.shareResult(regionName, scoresText);
+      const scoreEntries = isMultiplayer
+        ? [
+            { label: `${t('player')}1`, score: p1Score },
+            { label: `${t('player')}2`, score: p2Score },
+          ]
+        : [{ score }];
+      this.shareResult(regionName, rName, scoreEntries, score, session.isDaily);
     });
 
     return el;
   }
 
-  /** Compose the comparison canvas(es) into a PNG and share/download it */
-  async shareResult(regionName, scoresText) {
+  /**
+   * Compose the comparison canvas(es) into a shareable PNG (with a
+   * GeoDoodle header, score/rank hero, and a www.geodoodle.com footer so
+   * the image itself brings viewers back to the site) and share/download it.
+   */
+  async shareResult(regionNameUpper, regionNameDisplay, scoreEntries, primaryScore, isDaily) {
     const canvases = this.renderedCanvases.filter(Boolean);
     if (canvases.length === 0) return;
 
-    const pad = 24;
-    const titleH = 48;
+    const lang = getLanguage();
     const night = this.app.gameState.getTheme() === 'night';
+    const bg = night ? '#18181B' : '#F9F8F6';
+    const ink = night ? '#FAFAFA' : '#1C1C1E';
+    const inkSoft = night ? '#A1A1AA' : '#6B7280';
+
+    const pad = 24;
+    const headerH = 40;
+    const dailyH = isDaily ? 28 : 0;
+    const heroH = 68;
+    const footerH = 48;
+    const canvasesH = Math.max(...canvases.map(c => c.height));
+
+    // Real x-offset of each comparison canvas, computed once and reused for
+    // both the hero score columns above and the drawImage placement below,
+    // so labels stay aligned with the canvas they describe.
+    const canvasXOffsets = [];
+    {
+      let cx = pad;
+      for (const c of canvases) {
+        canvasXOffsets.push(cx);
+        cx += c.width + pad;
+      }
+    }
 
     const out = document.createElement('canvas');
     out.width = canvases.reduce((sum, c) => sum + c.width, 0) + pad * (canvases.length + 1);
-    out.height = Math.max(...canvases.map(c => c.height)) + titleH + pad * 2;
+    out.height = pad + headerH + dailyH + heroH + pad + canvasesH + pad + footerH;
     const ctx = out.getContext('2d');
 
-    ctx.fillStyle = night ? '#18181B' : '#F9F8F6';
+    ctx.fillStyle = bg;
     ctx.fillRect(0, 0, out.width, out.height);
-    ctx.fillStyle = night ? '#ffffff' : '#1a1a1a';
-    ctx.font = '600 22px Outfit, system-ui, sans-serif';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(`GeoDoodle • ${regionName} • ${scoresText}`, pad, pad + titleH / 2);
 
-    let x = pad;
-    for (const c of canvases) {
-      ctx.drawImage(c, x, titleH + pad);
-      x += c.width + pad;
+    let y = pad;
+
+    // Header: GeoDoodle wordmark (fixed size) + region name (shrinks, then
+    // ellipsizes, to fit the remaining width — region names can run long).
+    ctx.fillStyle = ink;
+    ctx.font = '800 26px Outfit, system-ui, sans-serif';
+    ctx.fillText('GeoDoodle', pad, y + 26);
+    const wordmarkWidth = ctx.measureText('GeoDoodle').width;
+    ctx.fillStyle = inkSoft;
+    const headerMaxWidth = out.width - pad - (pad + wordmarkWidth);
+    const headerLine = fitText(ctx, ` • ${regionNameUpper}`, 22, 600, headerMaxWidth);
+    ctx.fillText(headerLine.text, pad + wordmarkWidth, y + 26);
+    y += headerH;
+
+    // Daily Challenge framing
+    if (isDaily) {
+      const dateStr = new Date().toLocaleDateString(lang === 'tr' ? 'tr-TR' : 'en-US', {
+        day: 'numeric', month: 'long', year: 'numeric',
+      });
+      ctx.font = '700 15px Outfit, system-ui, sans-serif';
+      ctx.fillStyle = inkSoft;
+      ctx.fillText(`${t('mode_text_daily')} • ${dateStr}`, pad, y + 16);
+      y += dailyH;
     }
+
+    // Hero: big score + rank name + badge (one block, or one per player)
+    if (scoreEntries.length === 1) {
+      const { score } = scoreEntries[0];
+      const rankObj = getRank(score);
+      const rankName = lang === 'en' ? rankObj.nameEn : rankObj.name;
+      ctx.font = '800 44px Outfit, system-ui, sans-serif';
+      ctx.fillStyle = ink;
+      ctx.fillText(String(score), pad, y + 44);
+      const scoreWidth = ctx.measureText(String(score)).width;
+      ctx.font = '600 18px Outfit, system-ui, sans-serif';
+      ctx.fillStyle = inkSoft;
+      ctx.fillText('/100', pad + scoreWidth + 4, y + 44);
+      ctx.fillStyle = ink;
+      const rankMaxWidth = out.width - pad * 2;
+      const rankLine = fitText(ctx, `${rankObj.badge} ${rankName}`, 18, 600, rankMaxWidth);
+      ctx.fillText(rankLine.text, pad, y + 66);
+    } else {
+      // Center each player's column on their actual comparison canvas
+      // (not an even out.width split, which drifts off the real canvas
+      // positions once canvases aren't identically sized).
+      ctx.textAlign = 'center';
+      scoreEntries.forEach((entry, i) => {
+        const rankObj = getRank(entry.score);
+        const rankName = lang === 'en' ? rankObj.nameEn : rankObj.name;
+        const colCenter = canvasXOffsets[i] + canvases[i].width / 2;
+        const colMaxWidth = canvases[i].width - 16;
+
+        ctx.font = '700 15px Outfit, system-ui, sans-serif';
+        ctx.fillStyle = inkSoft;
+        ctx.fillText(entry.label, colCenter, y + 16);
+
+        ctx.font = '800 28px Outfit, system-ui, sans-serif';
+        ctx.fillStyle = ink;
+        ctx.fillText(`${entry.score}/100`, colCenter, y + 44);
+
+        ctx.fillStyle = inkSoft;
+        const rankLine = fitText(ctx, `${rankObj.badge} ${rankName}`, 14, 600, colMaxWidth);
+        ctx.fillText(rankLine.text, colCenter, y + 64);
+      });
+      ctx.textAlign = 'left';
+    }
+    y += heroH + pad;
+
+    // Comparison canvas(es) — reuse the same x-offsets as the hero above
+    canvases.forEach((c, i) => ctx.drawImage(c, canvasXOffsets[i], y));
+    y += canvasesH + pad;
+
+    // Footer strip — the whole point: make the site URL clearly readable
+    ctx.fillStyle = ink;
+    ctx.fillRect(0, y, out.width, footerH);
+    ctx.fillStyle = bg;
+    ctx.font = '700 20px Outfit, system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('www.geodoodle.com', out.width / 2, y + footerH / 2);
 
     const blob = await new Promise(resolve => out.toBlob(resolve, 'image/png'));
     if (!blob) return;
 
     const file = new File([blob], 'geodoodle.png', { type: 'image/png' });
+    const shareText = isDaily
+      ? t('share_text_daily', { score: primaryScore })
+      : t('share_text_normal', { region: regionNameDisplay, score: primaryScore });
+    const shareUrl = 'https://www.geodoodle.com';
+
+    // Some share targets ignore text/url when files are present, but it's
+    // harmless to include — and free traffic when they don't.
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
       try {
-        await navigator.share({ files: [file], title: 'GeoDoodle' });
+        await navigator.share({ files: [file], title: 'GeoDoodle', text: shareText, url: shareUrl });
       } catch (e) {
         // User cancelled the share sheet — nothing to do
       }
