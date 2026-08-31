@@ -217,6 +217,16 @@ const translations = {
   }
 };
 
+/**
+ * Uppercase a region name with the locale matching the name actually
+ * picked (Turkish `name` vs English `nameEn`), not the UI language — plain
+ * .toUpperCase() turns "Diyarbakır" into "DIYARBAKIR" (i→I) instead of the
+ * correct Turkish "DİYARBAKIR" (i→İ). Pass `isEnglishName: true` only when
+ * `nameEn` was actually used for `name`.
+ */
+export const localeUpperCase = (name, isEnglishName) =>
+  name.toLocaleUpperCase(isEnglishName ? 'en-US' : 'tr-TR');
+
 export const t = (key, params = {}) => {
   let text = translations[currentLang][key] || key;
   

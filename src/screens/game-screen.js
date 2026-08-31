@@ -1,5 +1,5 @@
 import { getRegionById } from '../data/levels.js';
-import { t, getLanguage } from '../i18n.js';
+import { t, getLanguage, localeUpperCase } from '../i18n.js';
 import { CanvasManager } from '../engine/canvas-manager.js';
 import { DrawingEngine } from '../engine/drawing-engine.js';
 import { ComparisonEngine } from '../engine/comparison-engine.js';
@@ -39,8 +39,9 @@ export class GameScreen {
       ? t('mode_text_daily')
       : mode === 'blind' ? t('mode_text_blind') : t('mode_text_trace');
     const lang = getLanguage();
-    const rName = lang === 'en' && this.region.nameEn ? this.region.nameEn : this.region.name;
-    const regionName = rName.toUpperCase();
+    const isEnglishName = lang === 'en' && !!this.region.nameEn;
+    const rName = isEnglishName ? this.region.nameEn : this.region.name;
+    const regionName = localeUpperCase(rName, isEnglishName);
 
     el.innerHTML = `
       <div style="position: relative; width: 100%; max-width: 100vw; margin: 0 auto; display: flex; flex-direction: column;">
@@ -343,9 +344,10 @@ export class GameScreen {
 
     // Update region name
     const lang = getLanguage();
-    const rName = lang === 'en' && this.region.nameEn ? this.region.nameEn : this.region.name;
+    const isEnglishName = lang === 'en' && !!this.region.nameEn;
+    const rName = isEnglishName ? this.region.nameEn : this.region.name;
     const rnEl = el.querySelector('#region-name');
-    if (rnEl) rnEl.textContent = rName.toUpperCase();
+    if (rnEl) rnEl.textContent = localeUpperCase(rName, isEnglishName);
 
     // Update mode text
     const modeText = this.app.gameState.session.isDaily

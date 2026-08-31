@@ -1,4 +1,4 @@
-import { t, getLanguage } from '../i18n.js';
+import { t, getLanguage, localeUpperCase } from '../i18n.js';
 import { getRank } from '../data/levels.js';
 
 /**
@@ -54,8 +54,9 @@ export class ResultScreen {
 
     const modeText = session.isDaily ? t('mode_text_daily') : (mode === 'blind' ? t('mode_text_blind') : t('mode_text_trace'));
     const lang = getLanguage();
-    const rName = lang === 'en' && region.nameEn ? region.nameEn : region.name;
-    const regionName = rName.toUpperCase();
+    const isEnglishName = lang === 'en' && !!region.nameEn;
+    const rName = isEnglishName ? region.nameEn : region.name;
+    const regionName = localeUpperCase(rName, isEnglishName);
 
     const renderPlayerHtml = (num, pScore, isWinner, isTie, vData) => {
       // Ensure the text wrapper is exactly the same width as the canvas
