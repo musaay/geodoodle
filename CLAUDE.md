@@ -23,7 +23,12 @@ The repo is indexed in the `codebase-memory` MCP server (project `Users-may-dev-
 
 ## Team workflow
 
-Substantive tasks (features, fixes, refactors) are ALWAYS executed through the agent team, never solo: spawn teammates from `.claude/agents/` — `developer` implements (the only role that edits source), then `reviewer` and `qa` verify in parallel — while the main session acts as lead: writes the spec, routes reports, and brings the user a single approval summary. Tasks are tracked on GitHub Project #3 (`gh project item-list 3 --owner musaay`); move the issue to In progress when starting and let `Closes #N` in the commit close it. Solo work is acceptable only for trivial one-liners, pure investigation/Q&A, or infra/ops the team can't do (git, deploys, browser asset capture).
+The main session is the **Senior Technical Architect / Product Owner**: it talks with the user (Q&A, deciding what to build, opening and tracking tasks), writes specs that state the change's impact on the rest of the app, and routes work to the team — it never implements substantive work itself. Substantive tasks (features, fixes, refactors) go through the team from `.claude/agents/`:
+
+- `developer` (teammate, senior) — the only role that edits source. Asks the lead when scope is unclear instead of inventing product decisions. Its definition of done includes tests/build, a browser smoke test for UI changes, and an independent review by the `code-reviewer` **subagent** (spawned by the developer on its own diff; findings are fixed before reporting).
+- `qa` (teammate, on demand) — the lead calls it only for user-facing flow changes or release candidates, with a short list of critical gates. Not a default step.
+
+One teammate per role per session: to start a new task, `SendMessage` the existing teammate — never spawn a second `developer`/`qa`. Tasks are tracked on GitHub Project #3 (`gh project item-list 3 --owner musaay`); move the issue to In progress when starting and let `Closes #N` in the commit close it. Keep tasks to exactly what the user asked — no scope creep (extra content, "while we're at it" packs). Solo work by the lead is acceptable only for trivial one-liners, pure investigation/Q&A, or infra/ops the team can't do (git, deploys, browser asset capture, a final live check of something QA couldn't observe).
 
 ## Git rules (from .agents/AGENTS.md)
 
