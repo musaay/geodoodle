@@ -13,6 +13,10 @@ export class DrawingEngine {
       lineWidth: options.lineWidth || 3,
       smoothing: options.smoothing !== false,
       theme: options.theme || 'day',
+      // Optional one-shot callback fired on this instance's very first
+      // pointerdown (not on every stroke) — lets the caller give a
+      // "you can draw here" cue the first time, e.g. a border glow.
+      onFirstStroke: options.onFirstStroke || null,
     };
 
     this.strokes = [];
@@ -23,6 +27,7 @@ export class DrawingEngine {
     this.brushSize = this.options.lineWidth;
     this.enabled = false;
     this.extraRenderFn = null;
+    this.firstStrokeFired = false;
 
     this._onPointerDown = this._onPointerDown.bind(this);
     this._onPointerMove = this._onPointerMove.bind(this);
@@ -59,6 +64,10 @@ export class DrawingEngine {
     e.preventDefault();
     this.isDrawing = true;
     playStrokeStart();
+    if (!this.firstStrokeFired) {
+      this.firstStrokeFired = true;
+      this.options.onFirstStroke?.();
+    }
     const pos = this.cm.pageToCanvas(e.clientX, e.clientY);
     this.currentStroke = {
       points: [pos],

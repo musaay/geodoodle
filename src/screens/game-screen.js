@@ -14,12 +14,15 @@ export class GameScreen {
     this.app = app;
     this.canvasManager = null;
     this.drawingEngine = null;
+    this.canvasContainerEl = null;
+    this.submitBtn = null;
     this.region = null;
     this.mode = 'trace';
     this.hintActive = false;
     this.hintTimer = null;
     this.hintsRemaining = 3;
     this.pendingTimerEl = null;
+    this.submitFeedbackTimer = null;
   }
 
   render(regionId, mode) {
@@ -31,6 +34,7 @@ export class GameScreen {
     this.hintsRemaining = 3;
     this.hintActive = false;
     this.pendingTimerEl = null;
+    this.submitFeedbackTimer = null;
 
     const theme = this.app.gameState.getTheme();
     const el = document.createElement('div');
@@ -119,11 +123,17 @@ export class GameScreen {
     const container = el.querySelector('#drawing-canvas');
     if (!container) return;
 
+    this.canvasContainerEl = container;
     this.canvasManager = new CanvasManager(container);
     this.drawingEngine = new DrawingEngine(this.canvasManager, {
       theme,
       color: theme === 'night' ? '#00f5d4' : '#3d2b1f',
       lineWidth: 3,
+      // First stroke of the round: a subtle one-shot glow so it's obvious
+      // the canvas is drawable.
+      onFirstStroke: () => {
+        container.classList.add('canvas-first-stroke-glow');
+      },
     });
 
     // In trace mode, show the silhouette as background
@@ -239,10 +249,21 @@ export class GameScreen {
       this.drawingEngine?.clearAll();
     });
 
-    // Submit
-    el.querySelector('[data-action="submit"]').addEventListener('click', () => {
+    // Submit — immediate tactile feedback (button press pulse + a quick
+    // canvas fade) so a tap never feels like "nothing happened", and the
+    // button is disabled for that same short window to prevent double
+    // submits. The actual scoring is only delayed by the feedback window.
+    this.submitBtn = el.querySelector('[data-action="submit"]');
+    this.submitBtn.addEventListener('click', () => {
+      if (this.submitBtn.disabled) return;
+      this.submitBtn.disabled = true;
       playSubmit();
-      this.submitDrawing();
+      this.submitBtn.classList.add('animate-submit-pulse');
+      this.canvasContainerEl?.classList.add('canvas-submit-fade');
+      this.submitFeedbackTimer = setTimeout(() => {
+        this.submitFeedbackTimer = null;
+        this.submitDrawing();
+      }, 220);
     });
 
     // Hint (blind mode only)
@@ -382,6 +403,10 @@ export class GameScreen {
         // They ran out of time
       } else {
         this.app.showToast(t('toast_draw_first'));
+        // Staying on this screen (no navigation) — undo the submit button's
+        // press feedback so it isn't left disabled/dimmed with nothing to
+        // follow it up.
+        this.resetSubmitFeedback();
         return;
       }
     }
@@ -485,6 +510,10 @@ export class GameScreen {
       this.gameTimer = null;
     }
     if (this.hintTimer) clearTimeout(this.hintTimer);
+    if (this.submitFeedbackTimer) {
+      clearTimeout(this.submitFeedbackTimer);
+      this.submitFeedbackTimer = null;
+    }
     // Whole screen (onboarding overlay included) is about to be discarded by
     // navigateTo() — drop the deferred-timer reference so nothing tries to
     // start a timer against a detached element later.
@@ -493,5 +522,19 @@ export class GameScreen {
     this.canvasManager?.destroy();
     this.drawingEngine = null;
     this.canvasManager = null;
+  }
+
+  /**
+   * Undoes the Submit button's press feedback (re-enables it, drops the
+   * pulse/fade classes) for the one path where submitDrawing() decides not
+   * to submit after all and the player stays on this screen — otherwise
+   * the button would be stuck disabled with no result screen coming.
+   */
+  resetSubmitFeedback() {
+    if (this.submitBtn) {
+      this.submitBtn.disabled = false;
+      this.submitBtn.classList.remove('animate-submit-pulse');
+    }
+    this.canvasContainerEl?.classList.remove('canvas-submit-fade');
   }
 }

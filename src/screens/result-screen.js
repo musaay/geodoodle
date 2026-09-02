@@ -1,6 +1,7 @@
 import { t, getLanguage, localeUpperCase } from '../i18n.js';
 import { getRank } from '../data/levels.js';
-import { playResult } from '../engine/audio-engine.js';
+import { playResult, playTick, isHighRank } from '../engine/audio-engine.js';
+import { startCountUp } from '../engine/count-up.js';
 
 /**
  * Shrink `text` (drawn in the given weight, starting at `baseSize`px) until
@@ -30,13 +31,17 @@ function fitText(ctx, text, baseSize, weight, maxWidth, floor = 0.6) {
 export class ResultScreen {
   constructor(app) {
     this.app = app;
+    this.countUpCancels = [];
+    this.confettiRaf = null;
+    this.confettiCanvas = null;
   }
 
   render(region, result, mode, isNewBest) {
+    // Screen instances are reused — cancel any count-up/confetti still
+    // running from a previous visit before building the new one.
+    this.cleanup();
+
     const { score, rank, visualData } = result;
-    // Score reveal stand-in until a count-up animation exists to drive
-    // playTick() itself — one fanfare/neutral cue per result screen visit.
-    playResult(rank);
     const theme = this.app.gameState.getTheme();
     const el = document.createElement('div');
     el.className = 'screen scroll-container';
@@ -52,7 +57,10 @@ export class ResultScreen {
 
     const p1Score = isMultiplayer ? session.p1Score : score;
     const p2Score = isMultiplayer ? session.p2Score : 0;
-    
+
+    const p1Rank = isMultiplayer ? getRank(p1Score) : rank;
+    const p2Rank = isMultiplayer ? getRank(p2Score) : null;
+
     const p1Visual = isMultiplayer ? session.p1VisualData : visualData;
     const p2Visual = isMultiplayer ? visualData : null;
 
@@ -62,7 +70,8 @@ export class ResultScreen {
     const rName = isEnglishName ? region.nameEn : region.name;
     const regionName = localeUpperCase(rName, isEnglishName);
 
-    const renderPlayerHtml = (num, pScore, isWinner, isTie, vData) => {
+    const renderPlayerHtml = (num, pRank, vData) => {
+      const rankName = lang === 'en' ? pRank.nameEn : pRank.name;
       // Ensure the text wrapper is exactly the same width as the canvas
       const widthStr = vData ? `max-width: ${vData.canvasWidth}px;` : 'width: 100%;';
       return `
@@ -73,7 +82,9 @@ export class ResultScreen {
             <span style="color: var(--text-primary); line-height: 1;">${regionName}${isMultiplayer ? ` (${t('player')}${num})` : ''}</span>
           </div>
           <div style="display: flex; align-items: center; gap: 1rem;">
-            <span style="color: var(--text-secondary); line-height: 1;">${isMultiplayer ? (isWinner ? t('result_winner') : isTie ? t('result_tie') : t('result_nice_try')) : modeText}</span>
+            ${isMultiplayer
+              ? `<span id="p${num}-result-label" style="color: var(--text-secondary); line-height: 1; visibility: hidden;"></span>`
+              : `<span style="color: var(--text-secondary); line-height: 1;">${modeText}</span>`}
           </div>
         </div>
         <div id="p${num}-canvas-container" style="width: 100%; margin: 1rem auto; background: var(--button-bg); border-radius: var(--radius-md); padding: 1rem; border: 1px solid var(--border-color);"></div>
@@ -81,7 +92,7 @@ export class ResultScreen {
           <div style="flex:1; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 1rem; display: flex; flex-direction: column; align-items: center; justify-content: center; box-shadow: var(--shadow);">
             <span style="font-size: 0.7rem; text-transform: uppercase; color: var(--text-secondary); letter-spacing: 1px; font-weight: 600; margin-bottom: 0.25rem;">${t('result_score')}</span>
             <div style="display: flex; align-items: baseline; gap: 0.25rem;">
-              <span style="font-size: 2rem; font-weight: 700; color: var(--accent-primary); line-height: 1;">${pScore}</span>
+              <span id="p${num}-score-value" style="font-size: 2rem; font-weight: 700; color: var(--accent-primary); line-height: 1;">0</span>
               <span style="font-size: 0.85rem; color: var(--text-secondary); font-weight: 600;">/ 100</span>
             </div>
           </div>
@@ -90,6 +101,7 @@ export class ResultScreen {
             <span style="font-size: 2rem; font-weight: 700; color: var(--accent-primary); line-height: 1;">${vData?.avgDeviationPercent ?? 0}%</span>
           </div>
         </div>
+        <div id="p${num}-rank-badge" class="result-rank-badge" style="display: none; align-self: center;">${pRank.badge} ${rankName}</div>
         ${num === 1 ? `
         <div style="display: flex; justify-content: center; flex-wrap: wrap; gap: 0.75rem; margin-top: 1.5rem; font-size: 0.75rem; color: var(--text-primary); font-weight: 500;">
           <div style="display: flex; align-items: center; gap: 0.4rem; background: var(--button-bg); padding: 0.4rem 0.75rem; border-radius: var(--radius-full); border: 1px solid var(--border-color);">
@@ -116,8 +128,8 @@ export class ResultScreen {
 
     el.innerHTML = `
       <div style="display: flex; flex-direction: ${isMultiplayer ? 'row' : 'column'}; gap: 2rem; width: 100%;">
-        ${renderPlayerHtml(1, p1Score, isMultiplayer && p1Score > p2Score, isMultiplayer && p1Score === p2Score, p1Visual)}
-        ${isMultiplayer ? renderPlayerHtml(2, p2Score, p2Score > p1Score, p1Score === p2Score, p2Visual) : ''}
+        ${renderPlayerHtml(1, p1Rank, p1Visual)}
+        ${isMultiplayer ? renderPlayerHtml(2, p2Rank, p2Visual) : ''}
       </div>
 
       <div style="display: flex; flex-direction: column; align-items: center; margin-top: 2rem; gap: 1rem; margin-bottom: 2rem;">
@@ -140,19 +152,23 @@ export class ResultScreen {
       if (p1Container && p1Visual) {
         this.renderComparisonCanvas(p1Container, p1Visual, theme);
       }
-      
+
       const p2Container = el.querySelector('#p2-canvas-container');
       if (p2Container && p2Visual) {
         this.renderComparisonCanvas(p2Container, p2Visual, theme);
       }
+
+      this.startScoreReveal(el, { isMultiplayer, p1Score, p2Score, p1Rank });
     });
 
     el.querySelector('[data-action="retry"]').addEventListener('click', () => {
+      this.cleanup();
       this.app.gameState.session.currentPlayer = 1;
       this.app.startGame(region.id, mode);
     });
 
     el.querySelector('[data-action="next"]').addEventListener('click', () => {
+      this.cleanup();
       this.app.gameState.session.currentPlayer = 1;
       this.app.showHome();
     });
@@ -168,6 +184,185 @@ export class ResultScreen {
     });
 
     return el;
+  }
+
+  /**
+   * Counts each player's score up from 0 (~1s, ease-out), throttling
+   * playTick() rather than firing it every frame. The rank badge for a
+   * player pops in the moment their own counter lands; in 2-player mode the
+   * winner/tie label only appears once BOTH counters have landed, and the
+   * result fanfare (plus confetti for a top-2 rank) fires at that same
+   * moment, using whichever player's rank is best.
+   *
+   * Both players' counters run at once but share one tick sound — only
+   * player 1's counter drives playTick() — so a synced 2-player reveal
+   * doesn't double up the ticking.
+   *
+   * Respects prefers-reduced-motion: reduce by skipping the animation
+   * (scores jump straight to their final value) and never launching confetti.
+   */
+  startScoreReveal(el, { isMultiplayer, p1Score, p2Score, p1Rank }) {
+    const prefersReducedMotion = typeof window !== 'undefined'
+      && window.matchMedia
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    const revealBadge = (num) => {
+      const badgeEl = el.querySelector(`#p${num}-rank-badge`);
+      if (!badgeEl) return;
+      badgeEl.style.display = 'inline-flex';
+      badgeEl.classList.add('animate-pop-in');
+    };
+
+    const revealResultLabel = () => {
+      if (!isMultiplayer) return;
+      const isTie = p1Score === p2Score;
+      const labelFor = (mine, theirs) => (isTie ? t('result_tie') : mine > theirs ? t('result_winner') : t('result_nice_try'));
+      for (const [num, mine, theirs] of [[1, p1Score, p2Score], [2, p2Score, p1Score]]) {
+        const labelEl = el.querySelector(`#p${num}-result-label`);
+        if (!labelEl) continue;
+        labelEl.textContent = labelFor(mine, theirs);
+        labelEl.style.visibility = 'visible';
+        labelEl.classList.add('animate-pop-in');
+      }
+    };
+
+    const finishRank = isMultiplayer ? getRank(Math.max(p1Score, p2Score)) : p1Rank;
+
+    const onAllDone = () => {
+      revealResultLabel();
+      playResult(finishRank);
+      if (isHighRank(finishRank)) this.launchConfetti();
+    };
+
+    if (prefersReducedMotion) {
+      const p1ValEl = el.querySelector('#p1-score-value');
+      if (p1ValEl) p1ValEl.textContent = String(p1Score);
+      revealBadge(1);
+      if (isMultiplayer) {
+        const p2ValEl = el.querySelector('#p2-score-value');
+        if (p2ValEl) p2ValEl.textContent = String(p2Score);
+        revealBadge(2);
+      }
+      revealResultLabel();
+      playResult(finishRank);
+      // No confetti under reduced motion, even for a top-2 rank.
+      return;
+    }
+
+    const totalCounters = isMultiplayer ? 2 : 1;
+    let doneCount = 0;
+    const onCounterDone = (num) => {
+      revealBadge(num);
+      doneCount++;
+      if (doneCount >= totalCounters) onAllDone();
+    };
+
+    const p1ValEl = el.querySelector('#p1-score-value');
+    this.countUpCancels.push(startCountUp({
+      target: p1Score,
+      onUpdate: (v) => { if (p1ValEl) p1ValEl.textContent = String(v); },
+      onTick: playTick,
+      onDone: () => onCounterDone(1),
+    }));
+
+    if (isMultiplayer) {
+      const p2ValEl = el.querySelector('#p2-score-value');
+      this.countUpCancels.push(startCountUp({
+        target: p2Score,
+        onUpdate: (v) => { if (p2ValEl) p2ValEl.textContent = String(v); },
+        onDone: () => onCounterDone(2),
+      }));
+    }
+  }
+
+  /**
+   * Lightweight canvas-based confetti burst (~1.5s, ~100 particles, no
+   * assets/library) for a top-2 rank reveal. Draws on its own transparent,
+   * click-through canvas over the whole screen, removed when the burst ends
+   * or when cleanup() runs (e.g. the player navigates away mid-burst).
+   */
+  launchConfetti() {
+    const theme = this.app.gameState.getTheme();
+    const colors = theme === 'night'
+      ? ['#00f5d4', '#FFD700', '#f87171', '#FAFAFA', '#B9F2FF']
+      : ['#4d94ff', '#FFD700', '#9b2226', '#1C1C1E', '#C0C0C0'];
+
+    const canvas = document.createElement('canvas');
+    canvas.className = 'confetti-canvas';
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    document.body.appendChild(canvas);
+    this.confettiCanvas = canvas;
+
+    const ctx = canvas.getContext('2d');
+    const count = 100;
+    const originX = canvas.width / 2;
+    const originY = canvas.height * 0.25;
+
+    const particles = Array.from({ length: count }, () => ({
+      x: originX,
+      y: originY,
+      vx: (Math.random() - 0.5) * 9,
+      vy: -(Math.random() * 7 + 4),
+      size: Math.random() * 6 + 4,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      rotation: Math.random() * Math.PI * 2,
+      vr: (Math.random() - 0.5) * 0.3,
+    }));
+
+    const gravity = 0.25;
+    const duration = 1500;
+    const start = performance.now();
+
+    const step = (t) => {
+      const elapsed = t - start;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const fade = 1 - Math.min(1, elapsed / duration);
+
+      for (const p of particles) {
+        p.vy += gravity;
+        p.x += p.vx;
+        p.y += p.vy;
+        p.rotation += p.vr;
+
+        ctx.save();
+        ctx.globalAlpha = fade;
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rotation);
+        ctx.fillStyle = p.color;
+        ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size);
+        ctx.restore();
+      }
+
+      if (elapsed < duration) {
+        this.confettiRaf = requestAnimationFrame(step);
+      } else {
+        canvas.remove();
+        if (this.confettiCanvas === canvas) this.confettiCanvas = null;
+        this.confettiRaf = null;
+      }
+    };
+    this.confettiRaf = requestAnimationFrame(step);
+  }
+
+  /**
+   * Cancels any running score count-ups and stops/removes any in-flight
+   * confetti. Called at the start of every render() (screen instances are
+   * reused) and before navigating away via retry/next, so nothing keeps
+   * ticking, playing sounds, or drawing after the screen is gone.
+   */
+  cleanup() {
+    for (const cancel of this.countUpCancels) cancel();
+    this.countUpCancels = [];
+
+    if (this.confettiRaf != null) {
+      cancelAnimationFrame(this.confettiRaf);
+      this.confettiRaf = null;
+    }
+    if (this.confettiCanvas) {
+      this.confettiCanvas.remove();
+      this.confettiCanvas = null;
+    }
   }
 
   /**

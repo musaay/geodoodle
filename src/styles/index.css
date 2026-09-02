@@ -854,6 +854,31 @@ h1, h2, h3, h4, h5, h6 {
   flex: 1;
 }
 
+/* Result screen's rank badge — pops in once the score count-up finishes */
+.result-rank-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 1rem auto 0;
+  padding: 0.4rem 1rem;
+  border-radius: var(--radius-full);
+  background: var(--button-bg);
+  border: 1px solid var(--border-color);
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+}
+
+/* Confetti burst overlay — full-viewport, click-through */
+.confetti-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 900;
+}
+
 /* Lets the game screen's own back button stay reachable above the overlay
    (unlike the canvas/toolbar, which stay blocked while onboarding is open). */
 .onboarding-above-overlay {
