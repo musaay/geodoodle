@@ -12,6 +12,7 @@ import {
   ArrowLeft, ArrowRight, BarChart2, Brain, Calendar, CheckCircle2, Eraser,
   Flame, Home, Lightbulb, Lock, Map, Moon, Paintbrush, Pen, PenTool,
   RotateCcw, Share2, Star, Sun, Target, Trash2, TrendingUp, Undo2, User, Users,
+  Volume2, VolumeX,
 } from 'lucide';
 
 // Only the icons the app actually uses, so the rest of the set is tree-shaken
@@ -19,6 +20,7 @@ const icons = {
   ArrowLeft, ArrowRight, BarChart2, Brain, Calendar, CheckCircle2, Eraser,
   Flame, Home, Lightbulb, Lock, Map, Moon, Paintbrush, Pen, PenTool,
   RotateCcw, Share2, Star, Sun, Target, Trash2, TrendingUp, Undo2, User, Users,
+  Volume2, VolumeX,
 };
 import { getLanguage } from './i18n.js';
 import { GameState } from './engine/game-state.js';
@@ -133,6 +135,20 @@ class GeoDoodleApp {
       }
     });
 
+    // Sound toggle
+    const soundBtn = document.createElement('button');
+    soundBtn.className = 'icon-btn toggle-btn';
+    soundBtn.id = 'sound-toggle';
+    const soundIcon = () => this.gameState.isSoundEnabled() ? '<i data-lucide="volume-2"></i>' : '<i data-lucide="volume-x"></i>';
+    soundBtn.innerHTML = soundIcon();
+    soundBtn.addEventListener('click', () => {
+      this.gameState.setSoundEnabled(!this.gameState.isSoundEnabled());
+      soundBtn.innerHTML = soundIcon();
+      if (window.lucide) {
+        window.lucide.createIcons({ root: soundBtn });
+      }
+    });
+
     // Language toggle
     const langBtn = document.createElement('button');
     langBtn.className = 'text-btn toggle-btn';
@@ -159,6 +175,7 @@ class GeoDoodleApp {
     });
 
     container.appendChild(langBtn);
+    container.appendChild(soundBtn);
     container.appendChild(themeBtn);
     document.body.appendChild(container);
   }

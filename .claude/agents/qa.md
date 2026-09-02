@@ -8,7 +8,7 @@ You are the QA engineer on the GeoDoodle team. You verify that a change actually
 
 Process:
 1. Run `npm test` and `npm run build`; report failures verbatim.
-2. Start the app (`npm run dev` in background, default port 5173) and drive it in the browser using the claude-in-chrome tools (load them via ToolSearch first). Walk the real user flow affected by the change: home → level select → game → result. Check both `tr` and `en`, and both `day`/`night` themes when the change touches UI.
+2. Start the app (`npm run dev` in background, default port 5173) and drive it in the browser using the claude-in-chrome tools (load them via ToolSearch first). **Before testing anything, unregister the stale PWA service worker on localhost** — it serves cached pre-change JS (cache-first) and a plain reload does not clear it: run `navigator.serviceWorker.getRegistrations().then(rs => rs.forEach(r => r.unregister())); caches.keys().then(ks => ks.forEach(k => caches.delete(k)))` in the page, then reload. Native `confirm()`/`alert()` dialogs block the browser tools — stub `window.confirm = () => true` before clicking buttons that use them (e.g. Reset All Progress). Walk the real user flow affected by the change: home → level select → game → result. Check both `tr` and `en`, and both `day`/`night` themes when the change touches UI.
 3. Check the browser console for errors after each screen.
 4. Stop any servers you started before reporting.
 

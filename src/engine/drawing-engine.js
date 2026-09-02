@@ -1,4 +1,5 @@
 import { getStroke } from 'perfect-freehand';
+import { playStrokeStart } from './audio-engine.js';
 
 /**
  * DrawingEngine - Handles user drawing input via Pointer Events
@@ -57,6 +58,7 @@ export class DrawingEngine {
   _onPointerDown(e) {
     e.preventDefault();
     this.isDrawing = true;
+    playStrokeStart();
     const pos = this.cm.pageToCanvas(e.clientX, e.clientY);
     this.currentStroke = {
       points: [pos],

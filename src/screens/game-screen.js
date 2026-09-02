@@ -3,6 +3,7 @@ import { t, getLanguage, localeUpperCase } from '../i18n.js';
 import { CanvasManager } from '../engine/canvas-manager.js';
 import { DrawingEngine } from '../engine/drawing-engine.js';
 import { ComparisonEngine } from '../engine/comparison-engine.js';
+import { playClick, playSubmit, playHint } from '../engine/audio-engine.js';
 
 /**
  * GameScreen - Main drawing gameplay screen
@@ -209,6 +210,7 @@ export class GameScreen {
     for (const [action, size] of Object.entries(brushActions)) {
       el.querySelector(`[data-action="${action}"]`).addEventListener('click', (e) => {
         if (!this.drawingEngine) return;
+        playClick();
         this.drawingEngine.setBrushSize(size);
         this.drawingEngine.setEraser(false);
         el.querySelectorAll('.toolbar-btn').forEach(b => b.classList.remove('active'));
@@ -219,6 +221,7 @@ export class GameScreen {
     // Eraser
     el.querySelector('[data-action="eraser"]').addEventListener('click', (e) => {
       if (!this.drawingEngine) return;
+      playClick();
       this.drawingEngine.setEraser(true);
       el.querySelectorAll('.toolbar-btn').forEach(b => b.classList.remove('active'));
       e.currentTarget.classList.add('active');
@@ -226,16 +229,19 @@ export class GameScreen {
 
     // Undo
     el.querySelector('[data-action="undo"]').addEventListener('click', () => {
+      playClick();
       this.drawingEngine?.undo();
     });
 
     // Clear
     el.querySelector('[data-action="clear"]').addEventListener('click', () => {
+      playClick();
       this.drawingEngine?.clearAll();
     });
 
     // Submit
     el.querySelector('[data-action="submit"]').addEventListener('click', () => {
+      playSubmit();
       this.submitDrawing();
     });
 
@@ -329,6 +335,7 @@ export class GameScreen {
 
     this.hintsRemaining--;
     this.hintActive = true;
+    playHint();
     this.app.gameState.recordHintUsed();
     
     // Update hint button title

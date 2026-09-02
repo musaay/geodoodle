@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { isSoundEnabled as audioEngineSoundEnabled } from './audio-engine.js';
 
 // Minimal in-memory localStorage stub — GameState persists via the global,
 // and this test environment has no DOM/localStorage of its own.
@@ -40,6 +41,47 @@ describe('GameState onboarding flag', () => {
 
     state.resetAll();
     expect(state.hasSeenOnboarding()).toBe(false);
+  });
+});
+
+describe('GameState sound preference', () => {
+  beforeEach(() => {
+    globalThis.localStorage.clear();
+  });
+
+  it('defaults to enabled on first run', () => {
+    const state = new GameState();
+    expect(state.isSoundEnabled()).toBe(true);
+    expect(audioEngineSoundEnabled()).toBe(true);
+  });
+
+  it('setSoundEnabled(false) persists and syncs the audio engine', () => {
+    const state = new GameState();
+    state.setSoundEnabled(false);
+    expect(state.isSoundEnabled()).toBe(false);
+    expect(audioEngineSoundEnabled()).toBe(false);
+
+    // Reload from storage to confirm it actually persisted, not just in-memory
+    const reloaded = new GameState();
+    expect(reloaded.isSoundEnabled()).toBe(false);
+    expect(audioEngineSoundEnabled()).toBe(false);
+  });
+
+  it('migrates an old saved blob without soundEnabled to the enabled default', () => {
+    // Simulate a returning player whose save predates this preference.
+    globalThis.localStorage.setItem('geodoodle_state', JSON.stringify({ theme: 'night', language: 'en' }));
+    const state = new GameState();
+    expect(state.isSoundEnabled()).toBe(true);
+  });
+
+  it('resetAll restores the enabled default', () => {
+    const state = new GameState();
+    state.setSoundEnabled(false);
+    expect(state.isSoundEnabled()).toBe(false);
+
+    state.resetAll();
+    expect(state.isSoundEnabled()).toBe(true);
+    expect(audioEngineSoundEnabled()).toBe(true);
   });
 });
 

@@ -1,5 +1,6 @@
 import { t, getLanguage, localeUpperCase } from '../i18n.js';
 import { getRank } from '../data/levels.js';
+import { playResult } from '../engine/audio-engine.js';
 
 /**
  * Shrink `text` (drawn in the given weight, starting at `baseSize`px) until
@@ -33,6 +34,9 @@ export class ResultScreen {
 
   render(region, result, mode, isNewBest) {
     const { score, rank, visualData } = result;
+    // Score reveal stand-in until a count-up animation exists to drive
+    // playTick() itself — one fanfare/neutral cue per result screen visit.
+    playResult(rank);
     const theme = this.app.gameState.getTheme();
     const el = document.createElement('div');
     el.className = 'screen scroll-container';

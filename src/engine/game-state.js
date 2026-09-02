@@ -1,6 +1,7 @@
 import { levels } from '../data/levels.js';
 import { setLanguage } from '../i18n.js';
 import { computeStreak, todayStr } from './daily.js';
+import { setSoundEnabled as syncAudioEngineSoundEnabled } from './audio-engine.js';
 
 const STORAGE_KEY = 'geodoodle_state';
 
@@ -12,6 +13,7 @@ const DEFAULT_STATE = {
   unlockedLevels: [1],
   firstTime: true,
   onboardingSeen: false,
+  soundEnabled: true,
   language: 'tr',
   daily: {}, // 'YYYY-MM-DD' -> { regionId, score }
 };
@@ -42,6 +44,7 @@ export function detectBrowserLanguage() {
 export class GameState {
   constructor() {
     this.state = this.load();
+    syncAudioEngineSoundEnabled(this.state.soundEnabled);
     this.listeners = new Set();
     this.session = {
       playerCount: 1,
@@ -247,8 +250,20 @@ export class GameState {
     this.save();
   }
 
+  // Sound effects toggle
+  isSoundEnabled() {
+    return this.state.soundEnabled;
+  }
+
+  setSoundEnabled(enabled) {
+    this.state.soundEnabled = enabled;
+    syncAudioEngineSoundEnabled(enabled);
+    this.save();
+  }
+
   resetAll() {
     this.state = { ...DEFAULT_STATE };
+    syncAudioEngineSoundEnabled(this.state.soundEnabled);
     localStorage.removeItem(STORAGE_KEY);
     this.save();
   }
