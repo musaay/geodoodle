@@ -131,6 +131,12 @@
   100% { transform: scale(1); opacity: 1; }
 }
 
+/* 21. onboardingPenDraw — traces then un-traces a wobbly loop, pure CSS/SVG */
+@keyframes onboardingPenDraw {
+  0% { stroke-dashoffset: 100; }
+  100% { stroke-dashoffset: 0; }
+}
+
 /* Utility Classes */
 .animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }
 .animate-fade-out { animation: fadeOut 0.4s ease-out forwards; }

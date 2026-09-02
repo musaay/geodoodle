@@ -57,6 +57,12 @@ const translations = {
     toast_no_hints: 'İpucu hakkın kalmadı!',
     toast_hint_shown: 'İpucu: 2 saniye! ({count} kaldı)',
     toast_draw_first: 'Önce bir çizim yapmalısın!',
+    onboarding_step1_trace: 'Görünen sınırın üzerinden çiz',
+    onboarding_step1_blind: 'Bölgenin sınırını hafızandan çiz',
+    onboarding_step2: '"Gönder" butonuna bas',
+    onboarding_step3: 'Skorunu ve rütbeni gör',
+    onboarding_skip: 'Atla',
+    onboarding_got_it: 'Anladım',
 
     // Result Screen
     result_winner: 'KAZANAN',
@@ -160,6 +166,12 @@ const translations = {
     toast_no_hints: 'No hints left!',
     toast_hint_shown: 'Hint: 2 seconds! ({count} left)',
     toast_draw_first: 'You need to draw something first!',
+    onboarding_step1_trace: 'Trace the visible border',
+    onboarding_step1_blind: 'Draw the region\'s border from memory',
+    onboarding_step2: 'Press "Submit"',
+    onboarding_step3: 'See your score and rank',
+    onboarding_skip: 'Skip',
+    onboarding_got_it: 'Got it',
 
     // Result Screen
     result_winner: 'WINNER',

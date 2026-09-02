@@ -18,6 +18,7 @@ export class GameScreen {
     this.hintActive = false;
     this.hintTimer = null;
     this.hintsRemaining = 3;
+    this.pendingTimerEl = null;
   }
 
   render(regionId, mode) {
@@ -28,6 +29,7 @@ export class GameScreen {
     // Fresh hint allowance for every game (screen instances are reused)
     this.hintsRemaining = 3;
     this.hintActive = false;
+    this.pendingTimerEl = null;
 
     const theme = this.app.gameState.getTheme();
     const el = document.createElement('div');
@@ -101,6 +103,9 @@ export class GameScreen {
     // Initialize after DOM insertion
     requestAnimationFrame(() => {
       this.initCanvas(el, theme);
+      if (!this.app.gameState.hasSeenOnboarding()) {
+        this.showOnboarding(el);
+      }
     });
 
     // Event listeners
@@ -142,13 +147,21 @@ export class GameScreen {
           lineDash: [4, 4]
         });
       });
-      
-      // Start 20 second timer
-      this.startTimer(el);
     }
 
     this.drawingEngine.enable();
     this.drawingEngine.render();
+
+    // Blind mode's 20s timer only starts once the player can actually see
+    // and use the canvas — deferred until the onboarding overlay (if any)
+    // is dismissed, so first-time players don't lose time to it.
+    if (this.mode === 'blind') {
+      if (this.app.gameState.hasSeenOnboarding()) {
+        this.startTimer(el);
+      } else {
+        this.pendingTimerEl = el;
+      }
+    }
   }
 
   startTimer(el) {
@@ -232,6 +245,78 @@ export class GameScreen {
       hintBtn.addEventListener('click', () => {
         this.showHint();
       });
+    }
+  }
+
+  showOnboarding(el) {
+    const isBlind = this.mode === 'blind';
+    const step1Text = isBlind ? t('onboarding_step1_blind') : t('onboarding_step1_trace');
+
+    const overlay = document.createElement('div');
+    overlay.className = 'overlay onboarding-overlay';
+    overlay.id = 'onboarding-overlay';
+    overlay.innerHTML = `
+      <div class="overlay-content onboarding-card animate-pop-in" role="dialog" aria-modal="true" aria-labelledby="onboarding-title">
+        <div class="onboarding-step">
+          <div class="onboarding-icon">
+            <i data-lucide="pen-tool"></i>
+            <svg class="onboarding-pen-hint" viewBox="0 0 40 40" aria-hidden="true">
+              <path pathLength="100" d="M8,24 C6,12 18,6 26,12 C34,18 32,30 22,30 C14,30 10,26 14,20" />
+            </svg>
+          </div>
+          <p id="onboarding-title" data-i18n="step1">${step1Text}</p>
+        </div>
+        <div class="onboarding-step">
+          <div class="onboarding-icon"><i data-lucide="check-circle-2"></i></div>
+          <p data-i18n="step2">${t('onboarding_step2')}</p>
+        </div>
+        <div class="onboarding-step">
+          <div class="onboarding-icon"><i data-lucide="star"></i></div>
+          <p data-i18n="step3">${t('onboarding_step3')}</p>
+        </div>
+        <div class="onboarding-actions">
+          <button class="btn btn-secondary" data-action="onboarding-skip" data-i18n="skip">${t('onboarding_skip')}</button>
+          <button class="btn btn-primary" data-action="onboarding-done" data-i18n="done">${t('onboarding_got_it')}</button>
+        </div>
+      </div>
+    `;
+
+    el.appendChild(overlay);
+    if (window.lucide) window.lucide.createIcons({ root: overlay });
+
+    // Block drawing under the overlay defensively (the full-screen overlay
+    // already intercepts pointer events, but this keeps intent explicit).
+    const canvasContainer = el.querySelector('#drawing-canvas');
+    if (canvasContainer) canvasContainer.style.pointerEvents = 'none';
+
+    // The back button stays reachable above the overlay (like the top-right
+    // theme/language toggles) so leaving mid-onboarding always works; the
+    // canvas and toolbar remain blocked.
+    const backBtn = el.querySelector('[data-action="back"]');
+    if (backBtn) backBtn.classList.add('onboarding-above-overlay');
+
+    const dismiss = () => this.dismissOnboarding(el);
+    overlay.querySelector('[data-action="onboarding-skip"]').addEventListener('click', dismiss);
+    const doneBtn = overlay.querySelector('[data-action="onboarding-done"]');
+    doneBtn.addEventListener('click', dismiss);
+    doneBtn.focus();
+  }
+
+  dismissOnboarding(el) {
+    const overlay = el.querySelector('#onboarding-overlay');
+    if (overlay) overlay.remove();
+
+    const canvasContainer = el.querySelector('#drawing-canvas');
+    if (canvasContainer) canvasContainer.style.pointerEvents = '';
+
+    const backBtn = el.querySelector('[data-action="back"]');
+    if (backBtn) backBtn.classList.remove('onboarding-above-overlay');
+
+    this.app.gameState.setOnboardingSeen();
+
+    if (this.pendingTimerEl) {
+      this.startTimer(this.pendingTimerEl);
+      this.pendingTimerEl = null;
     }
   }
 
@@ -360,6 +445,21 @@ export class GameScreen {
     const hintBtn = el.querySelector('#btn-hint');
     if (hintBtn) hintBtn.title = t('hint_title', {count: this.hintsRemaining});
 
+    // Update onboarding overlay, if still showing
+    const onboardingOverlay = el.querySelector('#onboarding-overlay');
+    if (onboardingOverlay) {
+      const step1El = onboardingOverlay.querySelector('[data-i18n="step1"]');
+      if (step1El) step1El.textContent = this.mode === 'blind' ? t('onboarding_step1_blind') : t('onboarding_step1_trace');
+      const step2El = onboardingOverlay.querySelector('[data-i18n="step2"]');
+      if (step2El) step2El.textContent = t('onboarding_step2');
+      const step3El = onboardingOverlay.querySelector('[data-i18n="step3"]');
+      if (step3El) step3El.textContent = t('onboarding_step3');
+      const skipBtn = onboardingOverlay.querySelector('[data-i18n="skip"]');
+      if (skipBtn) skipBtn.textContent = t('onboarding_skip');
+      const doneBtn = onboardingOverlay.querySelector('[data-i18n="done"]');
+      if (doneBtn) doneBtn.textContent = t('onboarding_got_it');
+    }
+
     // Update toolbar buttons
     const tools = ['thin', 'medium', 'thick', 'eraser', 'undo', 'clear', 'submit'];
     for (const tool of tools) {
@@ -378,6 +478,10 @@ export class GameScreen {
       this.gameTimer = null;
     }
     if (this.hintTimer) clearTimeout(this.hintTimer);
+    // Whole screen (onboarding overlay included) is about to be discarded by
+    // navigateTo() — drop the deferred-timer reference so nothing tries to
+    // start a timer against a detached element later.
+    this.pendingTimerEl = null;
     this.drawingEngine?.destroy();
     this.canvasManager?.destroy();
     this.drawingEngine = null;

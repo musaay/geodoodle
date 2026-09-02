@@ -11,9 +11,29 @@ const DEFAULT_STATE = {
   hintsUsed: 0,
   unlockedLevels: [1],
   firstTime: true,
+  onboardingSeen: false,
   language: 'tr',
   daily: {}, // 'YYYY-MM-DD' -> { regionId, score }
 };
+
+/**
+ * Picks a starting language for a true first run, from the browser's
+ * reported language(s) — Turkish if any of them is a `tr*` locale,
+ * English otherwise. Falls back to the 'tr' default when `navigator` isn't
+ * available at all (older environments, or this project's DOM-free tests).
+ */
+export function detectBrowserLanguage() {
+  if (typeof navigator === 'undefined') return 'tr';
+
+  const candidates = [
+    ...(Array.isArray(navigator.languages) ? navigator.languages : []),
+    ...(navigator.language ? [navigator.language] : []),
+  ];
+  if (candidates.some((l) => typeof l === 'string' && l.toLowerCase().startsWith('tr'))) {
+    return 'tr';
+  }
+  return candidates.length > 0 ? 'en' : 'tr';
+}
 
 /**
  * GameState - Manages all game state with LocalStorage persistence
@@ -45,7 +65,9 @@ export class GameState {
     } catch (e) {
       console.warn('Failed to load game state:', e);
     }
-    const state = { ...DEFAULT_STATE };
+    // True first run — no saved preference to respect, so pick the language
+    // from the browser instead of always defaulting to Turkish.
+    const state = { ...DEFAULT_STATE, language: detectBrowserLanguage() };
     setLanguage(state.language);
     return state;
   }
@@ -213,6 +235,16 @@ export class GameState {
       return true;
     }
     return false;
+  }
+
+  // Game screen onboarding overlay (shown once, re-armed by resetAll)
+  hasSeenOnboarding() {
+    return !!this.state.onboardingSeen;
+  }
+
+  setOnboardingSeen() {
+    this.state.onboardingSeen = true;
+    this.save();
   }
 
   resetAll() {
