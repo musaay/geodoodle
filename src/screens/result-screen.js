@@ -2,6 +2,7 @@ import { t, getLanguage, localeUpperCase } from '../i18n.js';
 import { getRank } from '../data/levels.js';
 import { playResult, playTick, isHighRank } from '../engine/audio-engine.js';
 import { startCountUp } from '../engine/count-up.js';
+import { track } from '../engine/analytics.js';
 
 /**
  * Shrink `text` (drawn in the given weight, starting at `baseSize`px) until
@@ -180,7 +181,7 @@ export class ResultScreen {
             { label: `${t('player')}2`, score: p2Score },
           ]
         : [{ score }];
-      this.shareResult(regionName, rName, scoreEntries, score, session.isDaily);
+      this.shareResult(region.id, regionName, rName, scoreEntries, score, session.isDaily);
     });
 
     return el;
@@ -370,7 +371,7 @@ export class ResultScreen {
    * GeoDoodle header, score/rank hero, and a www.geodoodle.com footer so
    * the image itself brings viewers back to the site) and share/download it.
    */
-  async shareResult(regionNameUpper, regionNameDisplay, scoreEntries, primaryScore, isDaily) {
+  async shareResult(regionId, regionNameUpper, regionNameDisplay, scoreEntries, primaryScore, isDaily) {
     const canvases = this.renderedCanvases.filter(Boolean);
     if (canvases.length === 0) return;
 
@@ -495,15 +496,21 @@ export class ResultScreen {
     const shareText = isDaily
       ? t('share_text_daily', { score: primaryScore })
       : t('share_text_normal', { region: regionNameDisplay, score: primaryScore });
-    const shareUrl = 'https://www.geodoodle.com';
+    // Deep-links the shared link back into the specific region (or the
+    // daily challenge) rather than the home page, tagged for GA4 attribution.
+    const shareUrl = isDaily
+      ? 'https://www.geodoodle.com/?daily=1&utm_source=share&utm_medium=social'
+      : `https://www.geodoodle.com/region/${regionId}/?utm_source=share&utm_medium=social`;
 
     // Some share targets ignore text/url when files are present, but it's
     // harmless to include — and free traffic when they don't.
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
       try {
         await navigator.share({ files: [file], title: 'GeoDoodle', text: shareText, url: shareUrl });
+        track('share', { method: 'native', daily: !!isDaily });
       } catch (e) {
-        // User cancelled the share sheet — nothing to do
+        // User cancelled the share sheet (AbortError) or the share otherwise
+        // didn't go through — either way, not a real share, so don't count it.
       }
       return;
     }
@@ -515,6 +522,7 @@ export class ResultScreen {
     a.download = 'geodoodle.png';
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+    track('share', { method: 'download', daily: !!isDaily });
   }
 
   renderComparisonCanvas(container, visualData, theme) {

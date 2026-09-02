@@ -128,7 +128,7 @@ function regionPage(region) {
     <p>Trace ${nameEn}'s outline or draw it from memory, then compare your drawing to the real border and see your accuracy score instantly.</p>
   </section>
 
-  <a class="cta" href="${SITE}/">GeoDoodle'da Oyna / Play on GeoDoodle</a>
+  <a class="cta" href="${SITE}/?region=${escapeHtml(region.id)}&amp;mode=trace">GeoDoodle'da Oyna / Play on GeoDoodle</a>
 </main>`;
 
   return pageShell({ title, description: region.funFact, canonical, bodyHtml: body });

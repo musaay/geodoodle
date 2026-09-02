@@ -1,6 +1,7 @@
 import { levels, getRegionById } from '../data/levels.js';
 import { t, getLanguage } from '../i18n.js';
 import { getDailyRegionPool, getDailyRegionId, todayStr } from '../engine/daily.js';
+import { track } from '../engine/analytics.js';
 
 /**
  * HomeScreen - Main menu with game mode selection
@@ -117,6 +118,7 @@ export class HomeScreen {
     });
     if (dailyRegionId) {
       el.querySelector('[data-action="daily"]').addEventListener('click', () => {
+        track('daily_open');
         const session = this.app.gameState.session;
         session.playerCount = 1;
         session.currentPlayer = 1;

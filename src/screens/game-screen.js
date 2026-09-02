@@ -4,6 +4,7 @@ import { CanvasManager } from '../engine/canvas-manager.js';
 import { DrawingEngine } from '../engine/drawing-engine.js';
 import { ComparisonEngine } from '../engine/comparison-engine.js';
 import { playClick, playSubmit, playHint } from '../engine/audio-engine.js';
+import { track } from '../engine/analytics.js';
 
 /**
  * GameScreen - Main drawing gameplay screen
@@ -35,6 +36,11 @@ export class GameScreen {
     this.hintActive = false;
     this.pendingTimerEl = null;
     this.submitFeedbackTimer = null;
+
+    const session = this.app.gameState.session;
+    track('game_start', {
+      mode, region: regionId, players: session.playerCount, daily: !!session.isDaily,
+    });
 
     const theme = this.app.gameState.getTheme();
     const el = document.createElement('div');
@@ -322,14 +328,14 @@ export class GameScreen {
     const backBtn = el.querySelector('[data-action="back"]');
     if (backBtn) backBtn.classList.add('onboarding-above-overlay');
 
-    const dismiss = () => this.dismissOnboarding(el);
-    overlay.querySelector('[data-action="onboarding-skip"]').addEventListener('click', dismiss);
+    overlay.querySelector('[data-action="onboarding-skip"]').addEventListener('click', () => this.dismissOnboarding(el, 'skip'));
     const doneBtn = overlay.querySelector('[data-action="onboarding-done"]');
-    doneBtn.addEventListener('click', dismiss);
+    doneBtn.addEventListener('click', () => this.dismissOnboarding(el, 'done'));
     doneBtn.focus();
   }
 
-  dismissOnboarding(el) {
+  dismissOnboarding(el, action) {
+    track('onboarding_dismiss', { action });
     const overlay = el.querySelector('#onboarding-overlay');
     if (overlay) overlay.remove();
 
@@ -419,7 +425,13 @@ export class GameScreen {
     );
 
     const session = this.app.gameState.session;
-    
+
+    track('game_submit', {
+      mode: this.mode, region: this.region.id, score: result.score,
+      rank: result.rank.nameEn, daily: !!session.isDaily,
+      hints_used: 3 - this.hintsRemaining,
+    });
+
     // Save to permanent stats ONLY if single player
     let isNewBest = false;
     if (session.playerCount === 1) {

@@ -24,6 +24,9 @@ const icons = {
 };
 import { getLanguage } from './i18n.js';
 import { GameState } from './engine/game-state.js';
+import { parseDeepLink } from './engine/deep-link.js';
+import { getDailyRegionPool, getDailyRegionId, todayStr } from './engine/daily.js';
+import { getRegionById } from './data/levels.js';
 import { HomeScreen } from './screens/home-screen.js';
 import { LevelSelectScreen } from './screens/level-select.js';
 import { GameScreen } from './screens/game-screen.js';
@@ -69,6 +72,38 @@ class GeoDoodleApp {
 
     // Register service worker
     this.registerSW();
+
+    // `?region=<id>&mode=<trace|blind>` or `?daily=1` — sends a shared link
+    // straight into the game it points to, instead of the home screen.
+    this.handleDeepLink();
+  }
+
+  /** Sends a startup deep link straight into the game it points to. */
+  handleDeepLink() {
+    const link = parseDeepLink(window.location.search);
+    if (!link) return;
+
+    const session = this.gameState.session;
+
+    if (link.type === 'region') {
+      // Ignore unknown region ids rather than crashing into a blank screen.
+      if (!getRegionById(link.regionId)) return;
+      session.playerCount = 1;
+      session.currentPlayer = 1;
+      session.isDaily = false;
+      // Deep-linked region games bypass the level star gate on purpose —
+      // startGame() itself never checks unlock state (only LevelSelectScreen
+      // does, by simply not wiring up a click handler for locked cards), so
+      // no extra bypass is needed here.
+      this.startGame(link.regionId, link.mode);
+    } else if (link.type === 'daily') {
+      const dailyRegionId = getDailyRegionId(todayStr(), getDailyRegionPool());
+      if (!dailyRegionId) return;
+      session.playerCount = 1;
+      session.currentPlayer = 1;
+      session.isDaily = true;
+      this.startGame(dailyRegionId, 'blind');
+    }
   }
 
   /** Navigate to a new screen */
