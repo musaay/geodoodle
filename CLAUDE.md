@@ -11,15 +11,15 @@ GeoDoodle is a Turkish-first, bilingual (tr/en) PWA game where players draw coun
 - `npm run dev` — Vite dev server
 - `npm run build` — build to `dist/`
 - `npm run preview` — preview the production build
-- `npm test` — run the Vitest suite (currently covers `ComparisonEngine`; run a single file with `npx vitest run src/engine/comparison-engine.test.js`)
+- `npm test` — run the Vitest suite (DOM-free unit tests next to the engine/data modules, e.g. `src/engine/*.test.js`, `src/data/levels.test.js`; run one file with `npx vitest run <path>`)
 - `go run main.go` — production static server for `./dist` (run `npm run build` first; listens on `$PORT`, default 8080; serves gzip + immutable cache headers for `/assets/`)
-- `node scripts/generate_geo_data.js` — regenerate `src/data/countries.js` and `src/data/turkey-provinces.js` from remote GeoJSON sources
+- `node scripts/generate_geo_data.js` — regenerate `src/data/countries.js`, `src/data/turkey-provinces.js` and `src/data/us-states.js` from remote GeoJSON. The original 15 countries are pinned in `scripts/pinned-country-paths.json` so upstream drift cannot change their shapes; the run is idempotent (no data diff on re-run).
 
 No linter is configured.
 
 ## Code graph
 
-The repo is indexed in the `codebase-memory` MCP server (project `Users-may-dev-projects-geodoodle`). For structural questions — who calls a function, call chains, finding symbols — prefer its tools (`search_graph`, `trace_path`, `get_code_snippet`, `search_code`) over plain grep. After making substantial code changes, re-run `index_repository` on `/Users/may/dev/projects/geodoodle` so the graph stays current.
+The repo is indexed in the `codebase-memory` MCP server (project `Users-may-dev-projects-geodoodle`); its `search_graph` / `trace_path` / `get_code_snippet` tools answer call-chain and symbol questions faster than grep on this codebase. The index can lag the working tree — re-run `index_repository` if a graph answer disagrees with the code.
 
 ## Team workflow
 
@@ -32,8 +32,7 @@ One teammate per role per session: to start a new task, `SendMessage` the existi
 
 ## Git rules (from .agents/AGENTS.md)
 
-- **NEVER** autonomously run `git add`, `git commit`, or `git push`.
-- After completing a task, summarize the changes and get the user's explicit approval before any commit/push.
+Commits and pushes happen only after the user approves them: finish the task, summarize the changes, and wait for an explicit go (the user says "gönder"/"pushla") before running `git add`/`commit`/`push`. Teammates never run git at all — the lead does, after approval.
 
 ## Architecture
 
@@ -45,7 +44,7 @@ One teammate per role per session: to start a new task, `SendMessage` the existi
 - `drawing-engine.js` — pointer-event drawing (touch + mouse) with perfect-freehand smoothing, brush sizes, eraser (strokes with `color: 'eraser'`), undo/redo. Re-renders on canvas resize.
 - `comparison-engine.js` — scoring: applies eraser strokes to the point set chronologically, resamples the user's strokes and the normalized target path to 60 equal-distance points each, then measures deviation symmetrically (user→target AND target→user, so partial tracings are penalized; no Procrustes alignment — position/size on canvas is intentionally part of the score). Returns `{ score, rank, visualData }`; `visualData` drives the result screen's overlay rendering (rays are user→target only). Ranks come from `getRank()` in `src/data/levels.js`. Unit-tested in `comparison-engine.test.js` via DOM-free stubs.
 
-**Data (`src/data/`)** — `countries.js` and `turkey-provinces.js` are **generated files** (each region: id, bilingual name, difficulty, funFact, and a point-array border path); edit region metadata in `scripts/generate_geo_data.js` and regenerate rather than hand-editing paths. `levels.js` is hand-maintained: level sections referencing region ids, star-gated progression (`requiredStars`), the two modes, and the `RANKS` table.
+**Data (`src/data/`)** — `countries.js`, `turkey-provinces.js` and `us-states.js` are **generated files** (each region: id, `name`/`nameEn`, difficulty, `category` country|province|state, `funFact`/`funFactEn`, and a point-array border path; 65 regions total). Edit region metadata in `scripts/generate_geo_data.js` (per-region `geoName`/`epsilon` overrides exist) and regenerate rather than hand-editing paths. `levels.js` is hand-maintained: level sections referencing region ids, star-gated progression (`requiredStars`), the two modes, and the `RANKS` table.
 
 **Game modes** — `'trace'` (Eğitim: target border visible, trace it) and `'blind'` (Hafıza: draw from memory). 1 or 2 players; 2-player rounds go through the handoff screen between turns and the result screen compares scores.
 

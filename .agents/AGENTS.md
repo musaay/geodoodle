@@ -1,6 +1,4 @@
 # Agent Rules
 
 ## Git Workflows
-- **NEVER** autonomously execute `git add`, `git commit`, or `git push` commands.
-- After completing a task or writing code, you **MUST** provide a summary of the changes to the user.
-- You **MUST** explicitly ask for and receive the user's approval before proceeding with any git commit or push actions.
+- Do not run `git add`, `git commit`, or `git push` on your own. After finishing a task, summarize the changes and wait for the user's explicit approval before any commit or push — the user wants to review every change that reaches the repository.
