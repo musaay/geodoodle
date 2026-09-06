@@ -26,7 +26,9 @@ import { getLanguage } from './i18n.js';
 import { GameState } from './engine/game-state.js';
 import { parseDeepLink } from './engine/deep-link.js';
 import { getDailyRegionPool, getDailyRegionId, todayStr } from './engine/daily.js';
-import { getRegionById } from './data/levels.js';
+import { getRegionById, levels } from './data/levels.js';
+import { track } from './engine/analytics.js';
+import { createErrorTracker } from './engine/error-tracker.js';
 import { HomeScreen } from './screens/home-screen.js';
 import { LevelSelectScreen } from './screens/level-select.js';
 import { GameScreen } from './screens/game-screen.js';
@@ -75,19 +77,33 @@ class GeoDoodleApp {
 
     // `?region=<id>&mode=<trace|blind>` or `?daily=1` — sends a shared link
     // straight into the game it points to, instead of the home screen.
-    this.handleDeepLink();
+    // Deep links always take priority over the portal's instant-play below.
+    const deepLinked = this.handleDeepLink();
+
+    // Portal (CrazyGames etc.) only: skip the home screen entirely and drop
+    // straight into a game, since the home → mode → level-list → game funnel
+    // was the biggest drop-off point for that audience (issue #14). The web
+    // build's behavior is untouched.
+    if (!deepLinked && import.meta.env.VITE_PORTAL === '1') {
+      this.startInstantPlay();
+    }
+
+    // Install once, regardless of build target — reports uncaught errors
+    // and unhandled promise rejections to GA4, deduped and capped so a loop
+    // can't spam analytics.
+    this.installErrorTracking();
   }
 
-  /** Sends a startup deep link straight into the game it points to. */
+  /** Sends a startup deep link straight into the game it points to. Returns whether it did. */
   handleDeepLink() {
     const link = parseDeepLink(window.location.search);
-    if (!link) return;
+    if (!link) return false;
 
     const session = this.gameState.session;
 
     if (link.type === 'region') {
       // Ignore unknown region ids rather than crashing into a blank screen.
-      if (!getRegionById(link.regionId)) return;
+      if (!getRegionById(link.regionId)) return false;
       session.playerCount = 1;
       session.currentPlayer = 1;
       session.isDaily = false;
@@ -96,14 +112,64 @@ class GeoDoodleApp {
       // does, by simply not wiring up a click handler for locked cards), so
       // no extra bypass is needed here.
       this.startGame(link.regionId, link.mode);
+      return true;
     } else if (link.type === 'daily') {
       const dailyRegionId = getDailyRegionId(todayStr(), getDailyRegionPool());
-      if (!dailyRegionId) return;
+      if (!dailyRegionId) return false;
       session.playerCount = 1;
       session.currentPlayer = 1;
       session.isDaily = true;
       this.startGame(dailyRegionId, 'blind');
+      return true;
     }
+    return false;
+  }
+
+  /**
+   * Portal-only instant play (issue #14): starts a trace-mode round in one
+   * of the level-1 "easy" regions directly, rotating which one by day (via
+   * the same date-hash used for the daily challenge) so repeat visitors see
+   * variety rather than always landing on the same country.
+   */
+  startInstantPlay() {
+    const easyLevel = levels.find((l) => l.id === 1);
+    const regionId = getDailyRegionId(todayStr(), easyLevel.regions);
+    if (!regionId) return;
+
+    const session = this.gameState.session;
+    session.playerCount = 1;
+    session.currentPlayer = 1;
+    session.isDaily = false;
+    this.startGame(regionId, 'trace');
+  }
+
+  /**
+   * Reports uncaught errors and unhandled promise rejections to GA4 as
+   * `js_error`, deduped and capped (see error-tracker.js) so a repeating
+   * failure can't spam analytics. Never lets a reporting mistake of its own
+   * become a second error.
+   */
+  installErrorTracking() {
+    const report = createErrorTracker(track);
+
+    window.addEventListener('error', (event) => {
+      try {
+        const source = event?.filename ? `${event.filename}:${event.lineno}:${event.colno}` : '';
+        report('error', event?.message, source);
+      } catch (e) {
+        // Never let the handler itself throw
+      }
+    });
+
+    window.addEventListener('unhandledrejection', (event) => {
+      try {
+        const reason = event?.reason;
+        const message = reason instanceof Error ? reason.message : String(reason);
+        report('rejection', message);
+      } catch (e) {
+        // Never let the handler itself throw
+      }
+    });
   }
 
   /** Navigate to a new screen */

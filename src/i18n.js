@@ -78,6 +78,7 @@ const translations = {
     result_out: 'DIŞARI',
     result_in: 'İÇERİ',
     play_again: 'TEKRAR OYNA',
+    next_region: 'SIRADAKİ →',
     back_to_menu: 'MENÜYE DÖN',
     result_share: 'PAYLAŞ',
     player: 'O', // Oyuncu (O1, O2)
@@ -187,6 +188,7 @@ const translations = {
     result_out: 'OUTSIDE',
     result_in: 'INSIDE',
     play_again: 'PLAY AGAIN',
+    next_region: 'NEXT →',
     back_to_menu: 'BACK TO MENU',
     result_share: 'SHARE',
     player: 'P', // Player (P1, P2)

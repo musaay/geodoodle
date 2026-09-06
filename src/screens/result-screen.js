@@ -3,6 +3,7 @@ import { getRank } from '../data/levels.js';
 import { playResult, playTick, isHighRank } from '../engine/audio-engine.js';
 import { startCountUp } from '../engine/count-up.js';
 import { track } from '../engine/analytics.js';
+import { resolveNextRegion } from '../engine/region-nav.js';
 
 /**
  * Shrink `text` (drawn in the given weight, starting at `baseSize`px) until
@@ -64,6 +65,8 @@ export class ResultScreen {
 
     const p1Visual = isMultiplayer ? session.p1VisualData : visualData;
     const p2Visual = isMultiplayer ? visualData : null;
+
+    const nextTarget = resolveNextRegion(region.id, mode, (levelId) => this.app.gameState.isLevelUnlocked(levelId));
 
     const modeText = session.isDaily ? t('mode_text_daily') : (mode === 'blind' ? t('mode_text_blind') : t('mode_text_trace'));
     const lang = getLanguage();
@@ -134,10 +137,13 @@ export class ResultScreen {
       </div>
 
       <div style="display: flex; flex-direction: column; align-items: center; margin-top: 2rem; gap: 1rem; margin-bottom: 2rem;">
-        <button class="btn btn-primary" data-action="retry" style="display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 2rem; border-radius: var(--radius-full); font-size: 1rem; font-weight: 600; box-shadow: var(--shadow); border: none;">
-          <i data-lucide="rotate-ccw" style="width: 20px; height: 20px;"></i> ${t('play_again')}
+        <button class="btn btn-primary" data-action="next-region" style="display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 2rem; border-radius: var(--radius-full); font-size: 1rem; font-weight: 600; box-shadow: var(--shadow); border: none;">
+          <i data-lucide="arrow-right" style="width: 20px; height: 20px;"></i> ${t('next_region')}
         </button>
-        <div style="display: flex; gap: 0.75rem;">
+        <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; justify-content: center;">
+          <button class="btn btn-secondary" data-action="retry" style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1.5rem; border-radius: var(--radius-full); font-size: 0.85rem; font-weight: 500; border: none; background: var(--button-bg);">
+            <i data-lucide="rotate-ccw" style="width: 16px; height: 16px;"></i> ${t('play_again')}
+          </button>
           <button class="btn btn-secondary" data-action="share" style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1.5rem; border-radius: var(--radius-full); font-size: 0.85rem; font-weight: 500; border: none; background: var(--button-bg);">
             <i data-lucide="share-2" style="width: 16px; height: 16px;"></i> ${t('result_share')}
           </button>
@@ -166,6 +172,18 @@ export class ResultScreen {
       this.cleanup();
       this.app.gameState.session.currentPlayer = 1;
       this.app.startGame(region.id, mode);
+    });
+
+    el.querySelector('[data-action="next-region"]').addEventListener('click', () => {
+      track('next_region', { from: region.id, to: nextTarget?.regionId ?? null, mode });
+      this.cleanup();
+      this.app.gameState.session.currentPlayer = 1;
+      if (nextTarget) {
+        this.app.gameState.session.isDaily = false;
+        this.app.startGame(nextTarget.regionId, nextTarget.mode);
+      } else {
+        this.app.showLevelSelect();
+      }
     });
 
     el.querySelector('[data-action="next"]').addEventListener('click', () => {
