@@ -1,4 +1,4 @@
-import { getRegionById } from '../data/levels.js';
+import { getRegionById, getAllRegions } from '../data/levels.js';
 import { t, getLanguage } from '../i18n.js';
 
 /**
@@ -11,6 +11,7 @@ export class StatsScreen {
 
   render() {
     const stats = this.app.gameState.getStats();
+    const totalRegions = getAllRegions().length;
     const bestRegion = stats.bestRegion ? getRegionById(stats.bestRegion) : null;
     const el = document.createElement('div');
     el.className = 'screen ';
@@ -63,10 +64,10 @@ export class StatsScreen {
             <h3 style="margin-bottom: 1rem; display:flex; align-items:center;"><i data-lucide="trending-up" style="display:inline-block; vertical-align:middle; width: 1.2rem; height: 1.2rem; margin-right: 0.5rem;"></i> ${t('stats_progress')}</h3>
             <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
               <span>${t('stats_overall_progress')}</span>
-              <span>${stats.regionsCompleted}/35 ${t('regions')}</span>
+              <span>${stats.regionsCompleted}/${totalRegions} ${t('regions')}</span>
             </div>
             <div class="progress-bar">
-              <div class="fill" style="width: ${(stats.regionsCompleted / 35 * 100).toFixed(1)}%"></div>
+              <div class="fill" style="width: ${(stats.regionsCompleted / totalRegions * 100).toFixed(1)}%"></div>
             </div>
           </div>
         ` : `

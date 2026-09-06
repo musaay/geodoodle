@@ -99,14 +99,14 @@ ${bodyHtml}
 `;
 }
 
-// funFact only exists in Turkish in the source data (src/data/*.js) — there
-// is no funFactEn field to regenerate from. Rather than show untranslated
-// Turkish text under an "English" heading, the English section gets a
-// templated (not literally translated) blurb instead.
+// English section uses region.funFactEn (translated, not invented, at
+// source-generation time) when present; older/unmigrated entries without it
+// fall back to a templated (not literally translated) blurb instead.
 function regionPage(region) {
   const name = escapeHtml(region.name);
   const nameEn = escapeHtml(region.nameEn);
   const fact = escapeHtml(region.funFact);
+  const factEn = escapeHtml(region.funFactEn || `Draw ${region.nameEn}'s border on GeoDoodle, a free geography drawing game.`);
   const title = `${region.name} Sınırını Çiz | GeoDoodle — Draw the Border of ${region.nameEn}`;
   const canonical = `${SITE}/region/${region.id}/`;
 
@@ -124,7 +124,7 @@ function regionPage(region) {
 
   <section>
     <h2>English</h2>
-    <p class="fact">Draw ${nameEn}'s border on GeoDoodle, a free geography drawing game.</p>
+    <p class="fact">${factEn}</p>
     <p>Trace ${nameEn}'s outline or draw it from memory, then compare your drawing to the real border and see your accuracy score instantly.</p>
   </section>
 

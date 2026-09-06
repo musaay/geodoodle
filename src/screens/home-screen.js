@@ -1,4 +1,4 @@
-import { levels, getRegionById } from '../data/levels.js';
+import { getRegionById, getAllRegions } from '../data/levels.js';
 import { t, getLanguage } from '../i18n.js';
 import { getDailyRegionPool, getDailyRegionId, todayStr } from '../engine/daily.js';
 import { track } from '../engine/analytics.js';
@@ -88,7 +88,7 @@ export class HomeScreen {
 
         <div class="fun-fact animate-fade-in" style="animation-delay: 0.5s; max-width: 400px; display: flex; align-items: center; gap: 0.5rem;">
           <i data-lucide="lightbulb" style="color: var(--warning, #f39c12);"></i>
-          <span>${t('fun_fact', { count: levels.reduce((sum, l) => sum + l.regions.length, 0) })}</span>
+          <span>${t('fun_fact', { count: getAllRegions().length })}</span>
         </div>
 
         ${import.meta.env.VITE_PORTAL === '1' ? '' : `<a href="/privacy/" style="margin-top: 1rem; color: var(--text-secondary); font-size: 0.75rem; text-decoration: underline;">${t('privacy_link')}</a>`}

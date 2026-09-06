@@ -1,5 +1,6 @@
 import { countries } from './countries.js';
 import { turkeyProvinces } from './turkey-provinces.js';
+import { usStates } from './us-states.js';
 
 export const RANKS = {
   EXPLORER: { name: 'Keşifçi', nameEn: 'Explorer', minScore: 0, maxScore: 50, badge: '🥉', color: '#CD7F32' },
@@ -76,6 +77,93 @@ export const levels = [
     requiredStars: 14,
     regions: ['romania', 'bulgaria', 'hungary', 'poland', 'czechia'],
   },
+  // World countries + US states pack (#3) — ids 11+ so existing ids (and
+  // any already-persisted unlockedLevels referencing them) stay stable;
+  // inserted here in array order so the level LIST reads countries → world
+  // → USA → Türkiye, ahead of the Turkish province sections below.
+  {
+    id: 11,
+    sectionName: 'Dünya Ülkeleri (Kolay) - Eğitim',
+    sectionNameEn: 'World Countries (Easy) - Training',
+    description: 'Tanıdık kıtalardan kolay ülkeler, önce üzerinden geç!',
+    descriptionEn: 'Familiar easy countries from around the world — trace them first!',
+    mode: 'trace',
+    // Deliberately low (matches level 2) so international/CrazyGames
+    // visitors reach non-Turkish content within a round or two, rather
+    // than grinding through the whole original ladder first.
+    requiredStars: 3,
+    regions: ['usa', 'canada', 'mexico', 'argentina', 'chile', 'uk', 'greece', 'norway'],
+  },
+  {
+    id: 12,
+    sectionName: 'Dünya Ülkeleri (Kolay) - Hafıza',
+    sectionNameEn: 'World Countries (Easy) - Memory',
+    description: 'Şimdi hafızandan çiz!',
+    descriptionEn: 'Now draw them from memory!',
+    mode: 'blind',
+    requiredStars: 6,
+    regions: ['usa', 'canada', 'mexico', 'argentina', 'chile', 'uk', 'greece', 'norway'],
+  },
+  {
+    id: 13,
+    sectionName: 'Dünya Ülkeleri (Orta) - Eğitim',
+    sectionNameEn: 'World Countries (Medium) - Training',
+    description: 'Biraz daha zor dünya ülkeleri, önce üzerinden geç!',
+    descriptionEn: 'Slightly harder countries from around the world, trace them first!',
+    mode: 'trace',
+    requiredStars: 9,
+    regions: ['portugal', 'sweden', 'finland', 'ireland', 'ukraine', 'china', 'south-korea', 'vietnam', 'thailand', 'saudi-arabia'],
+  },
+  {
+    id: 14,
+    sectionName: 'Dünya Ülkeleri (Orta) - Hafıza',
+    sectionNameEn: 'World Countries (Medium) - Memory',
+    description: 'Orta seviye dünya ülkelerini hafızandan çizebilecek misin?',
+    descriptionEn: 'Can you draw these medium-level world countries from memory?',
+    mode: 'blind',
+    requiredStars: 12,
+    regions: ['portugal', 'sweden', 'finland', 'ireland', 'ukraine', 'china', 'south-korea', 'vietnam', 'thailand', 'saudi-arabia'],
+  },
+  {
+    id: 15,
+    sectionName: 'Dünya Ülkeleri (Zor) - Eğitim',
+    sectionNameEn: 'World Countries (Hard) - Training',
+    description: 'En zorlu dünya ülkelerinin sınırları, dikkatli çiz!',
+    descriptionEn: 'Borders of the toughest world countries — draw carefully!',
+    mode: 'trace',
+    requiredStars: 15,
+    regions: ['switzerland', 'south-africa'],
+  },
+  {
+    id: 16,
+    sectionName: 'Dünya Ülkeleri (Zor) - Hafıza',
+    sectionNameEn: 'World Countries (Hard) - Memory',
+    description: 'Bu zorlu ülkeleri hafızandan çizmeyi dene!',
+    descriptionEn: 'Try to draw these tough countries from memory!',
+    mode: 'blind',
+    requiredStars: 18,
+    regions: ['switzerland', 'south-africa'],
+  },
+  {
+    id: 17,
+    sectionName: 'ABD Eyaletleri - Eğitim',
+    sectionNameEn: 'US States - Training',
+    description: 'Amerika Birleşik Devletleri\'nin eyaletlerini çizerek keşfet!',
+    descriptionEn: 'Explore the states of the United States by tracing them!',
+    mode: 'trace',
+    requiredStars: 21,
+    regions: ['texas', 'california', 'florida', 'colorado', 'utah', 'nevada', 'idaho', 'new-york', 'washington', 'oklahoma'],
+  },
+  {
+    id: 18,
+    sectionName: 'ABD Eyaletleri - Hafıza',
+    sectionNameEn: 'US States - Memory',
+    description: 'Eyalet sınırlarını hafızandan ne kadar iyi çizebilirsin?',
+    descriptionEn: 'How well can you draw state borders from memory?',
+    mode: 'blind',
+    requiredStars: 24,
+    regions: ['texas', 'california', 'florida', 'colorado', 'utah', 'nevada', 'idaho', 'new-york', 'washington', 'oklahoma'],
+  },
   {
     id: 7,
     sectionName: 'Türkiye İlleri (Kolay) - Eğitim',
@@ -120,7 +208,7 @@ export const levels = [
 
 // Helper to get all regions
 export function getAllRegions() {
-  return [...countries, ...turkeyProvinces];
+  return [...countries, ...turkeyProvinces, ...usStates];
 }
 
 export function getRegionById(id) {

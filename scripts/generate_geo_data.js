@@ -3,46 +3,96 @@ import https from 'https';
 
 const COUNTRIES_URL = 'https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson';
 const TURKEY_PROVINCES_URL = 'https://raw.githubusercontent.com/cihadturhan/tr-geojson/master/geo/tr-cities-utf8.json';
+const US_STATES_URL = 'https://raw.githubusercontent.com/PublicaMundi/MappingAPI/master/data/geojson/us-states.json';
+
+// The upstream COUNTRIES_URL source has changed its geometry since these 15
+// were first generated (re-simplified for most; a genuinely different
+// largest-ring selection for a few, e.g. Japan/France) — regenerating them
+// from HEAD today would silently change already-shipped shapes for existing
+// players. Their paths are pinned to the original generation instead, so
+// only genuinely new countries pull fresh geometry from upstream. Remove an
+// id from this file (and re-run) to deliberately pick up new upstream data
+// for it, once that's a decision someone's made on purpose.
+const PINNED_COUNTRY_PATHS = JSON.parse(fs.readFileSync(new URL('./pinned-country-paths.json', import.meta.url), 'utf-8'));
 
 const COUNTRIES_METADATA = [
-  { id: 'turkey', name: 'Türkiye', nameEn: 'Turkey', difficulty: 'easy', funFact: 'İki kıtada yer alan tek ülke!' },
-  { id: 'italy', name: 'İtalya', nameEn: 'Italy', difficulty: 'easy', funFact: 'Haritada çizme şekline sahip olduğu için çok kolay tanınır.' },
-  { id: 'japan', name: 'Japonya', nameEn: 'Japan', difficulty: 'easy', funFact: '6.852 adadan oluşur ancak genelde 4 ana adası çizilir.' },
-  { id: 'brazil', name: 'Brezilya', nameEn: 'Brazil', difficulty: 'easy', funFact: 'Güney Amerika kıtasının neredeyse yarısını kaplar!' },
-  { id: 'australia', name: 'Avustralya', nameEn: 'Australia', difficulty: 'easy', funFact: 'Hem bir ülke hem de bir kıtadır!' },
-  { id: 'france', name: 'Fransa', nameEn: 'France', difficulty: 'medium', funFact: 'Altıgen (L\'Hexagone) şekliyle bilinir.' },
-  { id: 'germany', name: 'Almanya', nameEn: 'Germany', difficulty: 'medium', funFact: 'Üçte biri hala ormanlarla kaplıdır!' },
-  { id: 'egypt', name: 'Mısır', nameEn: 'Egypt', difficulty: 'medium', funFact: 'Sınırları neredeyse tamamen düz çizgilerden oluşur!' },
-  { id: 'india', name: 'Hindistan', nameEn: 'India', difficulty: 'medium', funFact: 'Ters bir üçgene benzeyen devasa bir yarımadadır.' },
-  { id: 'spain', name: 'İspanya', nameEn: 'Spain', difficulty: 'medium', funFact: 'İber Yarımadası\'nın %85\'ini kaplar.' },
-  { id: 'romania', name: 'Romanya', nameEn: 'Romania', difficulty: 'hard', funFact: 'Karadeniz\'e kıyısı olan yuvarlakımsı bir ülkedir.' },
-  { id: 'bulgaria', name: 'Bulgaristan', nameEn: 'Bulgaria', difficulty: 'hard', funFact: 'Balkan Dağları ülkeyi tam ortadan ikiye böler.' },
-  { id: 'hungary', name: 'Macaristan', nameEn: 'Hungary', difficulty: 'hard', funFact: 'Tuna nehri ülkeyi ikiye ayırır.' },
-  { id: 'poland', name: 'Polonya', nameEn: 'Poland', difficulty: 'hard', funFact: 'Neredeyse kusursuz bir altıgene benzer.' },
-  { id: 'czechia', name: 'Çekya', nameEn: 'Czechia', difficulty: 'hard', funFact: 'Tamamen karayla çevrili bir Orta Avrupa ülkesidir.' }
+  { id: 'turkey', name: 'Türkiye', nameEn: 'Turkey', difficulty: 'easy', funFact: 'İki kıtada yer alan tek ülke!', funFactEn: 'The only country located on two continents!' },
+  { id: 'italy', name: 'İtalya', nameEn: 'Italy', difficulty: 'easy', funFact: 'Haritada çizme şekline sahip olduğu için çok kolay tanınır.', funFactEn: 'Instantly recognizable for its boot shape on the map.' },
+  { id: 'japan', name: 'Japonya', nameEn: 'Japan', difficulty: 'easy', funFact: '6.852 adadan oluşur ancak genelde 4 ana adası çizilir.', funFactEn: 'Made up of 6,852 islands, though usually drawn as its 4 main ones.' },
+  { id: 'brazil', name: 'Brezilya', nameEn: 'Brazil', difficulty: 'easy', funFact: 'Güney Amerika kıtasının neredeyse yarısını kaplar!', funFactEn: 'Covers nearly half of the South American continent!' },
+  { id: 'australia', name: 'Avustralya', nameEn: 'Australia', difficulty: 'easy', funFact: 'Hem bir ülke hem de bir kıtadır!', funFactEn: 'Both a country and a continent!' },
+  { id: 'france', name: 'Fransa', nameEn: 'France', difficulty: 'medium', funFact: 'Altıgen (L\'Hexagone) şekliyle bilinir.', funFactEn: 'Known for its hexagon shape, nicknamed "L\'Hexagone".' },
+  { id: 'germany', name: 'Almanya', nameEn: 'Germany', difficulty: 'medium', funFact: 'Üçte biri hala ormanlarla kaplıdır!', funFactEn: 'About a third of the country is still covered in forest!' },
+  { id: 'egypt', name: 'Mısır', nameEn: 'Egypt', difficulty: 'medium', funFact: 'Sınırları neredeyse tamamen düz çizgilerden oluşur!', funFactEn: 'Its borders are made up almost entirely of straight lines!' },
+  { id: 'india', name: 'Hindistan', nameEn: 'India', difficulty: 'medium', funFact: 'Ters bir üçgene benzeyen devasa bir yarımadadır.', funFactEn: 'A vast peninsula shaped like an inverted triangle.' },
+  { id: 'spain', name: 'İspanya', nameEn: 'Spain', difficulty: 'medium', funFact: 'İber Yarımadası\'nın %85\'ini kaplar.', funFactEn: 'Covers about 85% of the Iberian Peninsula.' },
+  { id: 'romania', name: 'Romanya', nameEn: 'Romania', difficulty: 'hard', funFact: 'Karadeniz\'e kıyısı olan yuvarlakımsı bir ülkedir.', funFactEn: 'A roughly round-shaped country with a Black Sea coastline.' },
+  { id: 'bulgaria', name: 'Bulgaristan', nameEn: 'Bulgaria', difficulty: 'hard', funFact: 'Balkan Dağları ülkeyi tam ortadan ikiye böler.', funFactEn: 'The Balkan Mountains split the country almost right down the middle.' },
+  { id: 'hungary', name: 'Macaristan', nameEn: 'Hungary', difficulty: 'hard', funFact: 'Tuna nehri ülkeyi ikiye ayırır.', funFactEn: 'The Danube River divides the country in two.' },
+  { id: 'poland', name: 'Polonya', nameEn: 'Poland', difficulty: 'hard', funFact: 'Neredeyse kusursuz bir altıgene benzer.', funFactEn: 'Its shape is close to a near-perfect hexagon.' },
+  { id: 'czechia', name: 'Çekya', nameEn: 'Czechia', difficulty: 'hard', funFact: 'Tamamen karayla çevrili bir Orta Avrupa ülkesidir.', funFactEn: 'A landlocked country in the heart of Central Europe.' },
+
+  // World countries pack (#3) — same source, matched by properties.name.
+  // `geoName` overrides the GeoJSON lookup name when it differs from `nameEn`.
+  { id: 'usa', name: 'ABD', nameEn: 'United States', geoName: 'United States of America', difficulty: 'easy', funFact: '50 eyaletten oluşur, kıtanın büyük bölümünü kaplar!', funFactEn: 'Made up of 50 states spanning nearly the whole continent!' },
+  { id: 'canada', name: 'Kanada', nameEn: 'Canada', difficulty: 'easy', funFact: 'Dünyanın yüzölçümü en büyük ikinci ülkesidir!', funFactEn: "The world's second-largest country by area!" },
+  { id: 'mexico', name: 'Meksika', nameEn: 'Mexico', difficulty: 'easy', funFact: 'Kuzey Amerika\'yı Orta Amerika\'ya bağlayan huni şeklindedir.', funFactEn: 'Its funnel shape links North America to Central America.' },
+  { id: 'argentina', name: 'Arjantin', nameEn: 'Argentina', difficulty: 'easy', funFact: 'Güney Amerika\'nın en uzun ikinci ülkesi, upuzun ve incedir!', funFactEn: 'A long, narrow country stretching almost the length of South America!' },
+  { id: 'chile', name: 'Şili', nameEn: 'Chile', difficulty: 'easy', funFact: '4.300 km\'den uzun ama ortalama sadece 180 km genişliğindedir!', funFactEn: 'Over 4,300 km long but only about 180 km wide on average!' },
+  { id: 'uk', name: 'Birleşik Krallık', nameEn: 'United Kingdom', difficulty: 'easy', funFact: 'İngiltere, İskoçya, Galler ve Kuzey İrlanda\'dan oluşur.', funFactEn: 'Made up of England, Scotland, Wales, and Northern Ireland.' },
+  { id: 'greece', name: 'Yunanistan', nameEn: 'Greece', difficulty: 'easy', funFact: 'Binlerce adaya sahip, kıyı şeridi Avrupa\'nın en uzunları arasında!', funFactEn: "Home to thousands of islands and one of Europe's longest coastlines!" },
+  { id: 'norway', name: 'Norveç', nameEn: 'Norway', difficulty: 'easy', funFact: 'Fiyortlarıyla ünlü, kuzeyde Kutup Dairesi\'ne kadar uzanır.', funFactEn: 'Famous for its fjords, stretching north into the Arctic Circle.' },
+
+  { id: 'portugal', name: 'Portekiz', nameEn: 'Portugal', difficulty: 'medium', funFact: 'İber Yarımadası\'nın batısında, Atlantik\'e uzun bir kıyısı vardır.', funFactEn: 'Sits on the western edge of the Iberian Peninsula with a long Atlantic coast.' },
+  { id: 'sweden', name: 'İsveç', nameEn: 'Sweden', difficulty: 'medium', funFact: 'İskandinav Yarımadası\'nın doğusunu kaplayan uzun bir ülkedir.', funFactEn: 'A long country covering the eastern side of the Scandinavian Peninsula.' },
+  { id: 'finland', name: 'Finlandiya', nameEn: 'Finland', difficulty: 'medium', funFact: 'On binlerce göle sahip olduğu için "Bin Göl Ülkesi" denir.', funFactEn: 'Called the "Land of a Thousand Lakes" for its tens of thousands of lakes.' },
+  { id: 'ireland', name: 'İrlanda', nameEn: 'Ireland', difficulty: 'medium', funFact: 'Yeşil tepeleriyle bilinen bir ada ülkesidir.', funFactEn: 'An island nation known for its green hills.' },
+  { id: 'ukraine', name: 'Ukrayna', nameEn: 'Ukraine', difficulty: 'medium', funFact: 'Avrupa\'nın yüzölçümü en büyük ikinci ülkesidir (Rusya hariç).', funFactEn: 'The second-largest country in Europe by area (excluding Russia).' },
+  { id: 'china', name: 'Çin', nameEn: 'China', difficulty: 'medium', funFact: 'Dünyanın en kalabalık ülkelerinden biri, geniş ve girintili bir sınıra sahiptir.', funFactEn: "One of the world's most populous countries, with a vast, irregular border." },
+  { id: 'south-korea', name: 'Güney Kore', nameEn: 'South Korea', difficulty: 'medium', funFact: 'Kore Yarımadası\'nın güney yarısını kaplar, kuzeyde DMZ ile sınırlanır.', funFactEn: 'Covers the southern half of the Korean Peninsula, bordered by the DMZ to the north.' },
+  { id: 'vietnam', name: 'Vietnam', nameEn: 'Vietnam', difficulty: 'medium', funFact: 'Harita üzerinde ince uzun bir "S" harfine benzer.', funFactEn: 'Shaped like a long, curving letter "S" on the map.' },
+  { id: 'thailand', name: 'Tayland', nameEn: 'Thailand', difficulty: 'medium', funFact: 'Güneydeki uzun yarımadasıyla bir fil başına benzetilir.', funFactEn: "Often compared to an elephant's head, thanks to its long southern peninsula." },
+  { id: 'saudi-arabia', name: 'Suudi Arabistan', nameEn: 'Saudi Arabia', difficulty: 'medium', funFact: 'Arap Yarımadası\'nın büyük bölümünü kaplayan geniş bir çöl ülkesidir.', funFactEn: 'A vast desert country covering most of the Arabian Peninsula.' },
+
+  { id: 'switzerland', name: 'İsviçre', nameEn: 'Switzerland', difficulty: 'hard', epsilon: 0.02, funFact: 'Alpler\'in ortasında, tamamen karayla çevrili küçük bir ülkedir.', funFactEn: 'A small, landlocked country in the heart of the Alps.' },
+  { id: 'south-africa', name: 'Güney Afrika', nameEn: 'South Africa', difficulty: 'hard', funFact: 'İçinde bağımsız bir ülke olan Lesotho\'yu tamamen çevreler.', funFactEn: 'Completely surrounds the independent country of Lesotho.' },
 ];
 
 const PROVINCES_METADATA = [
-  { id: 'istanbul', name: 'İstanbul', nameEn: 'Istanbul', difficulty: 'easy', funFact: 'Asya ve Avrupa\'yı birbirine bağlayan efsanevi şehir!' },
-  { id: 'ankara', name: 'Ankara', nameEn: 'Ankara', difficulty: 'easy', funFact: 'Türkiye\'nin kalbi ve başkenti.' },
-  { id: 'antalya', name: 'Antalya', nameEn: 'Antalya', difficulty: 'easy', funFact: 'Türkiye\'nin turizm başkenti, upuzun bir sahile sahip.' },
-  { id: 'izmir', name: 'İzmir', nameEn: 'Izmir', difficulty: 'easy', funFact: 'Ege\'nin incisi, kordonuyla meşhur!' },
-  { id: 'konya', name: 'Konya', nameEn: 'Konya', difficulty: 'easy', funFact: 'Türkiye\'nin yüzölçümü en büyük ilidir!' },
-  { id: 'trabzon', name: 'Trabzon', nameEn: 'Trabzon', difficulty: 'easy', funFact: 'Karadeniz\'in hırçın dalgalarına kıyısı var.' },
-  { id: 'hatay', name: 'Hatay', nameEn: 'Hatay', difficulty: 'easy', funFact: 'Akdeniz\'in en güney ucunda ince uzun bir şekle sahip.' },
-  { id: 'van', name: 'Van', nameEn: 'Van', difficulty: 'easy', funFact: 'Türkiye\'nin en büyük gölüne ev sahipliği yapar.' },
-  { id: 'bursa', name: 'Bursa', nameEn: 'Bursa', difficulty: 'medium', funFact: 'Uludağ\'ın eteklerinde tarihi bir şehir.' },
-  { id: 'adana', name: 'Adana', nameEn: 'Adana', difficulty: 'medium', funFact: 'Kebabıyla meşhur, Çukurova\'nın kalbi.' },
-  { id: 'samsun', name: 'Samsun', nameEn: 'Samsun', difficulty: 'medium', funFact: 'Milli Mücadelenin başladığı şehir.' },
-  { id: 'erzurum', name: 'Erzurum', nameEn: 'Erzurum', difficulty: 'medium', funFact: 'Palandöken dağlarıyla kış turizminin gözdesi.' },
-  { id: 'diyarbakir', name: 'Diyarbakır', nameEn: 'Diyarbakir', difficulty: 'medium', funFact: 'Tarihi surları uzaydan bile görülebilir.' },
-  { id: 'mugla', name: 'Muğla', nameEn: 'Mugla', difficulty: 'medium', funFact: 'Türkiye\'nin en uzun sahil şeridine sahip.' },
-  { id: 'kayseri', name: 'Kayseri', nameEn: 'Kayseri', difficulty: 'medium', funFact: 'Erciyes dağının gölgesinde ticaretiyle ünlü.' },
-  { id: 'bolu', name: 'Bolu', nameEn: 'Bolu', difficulty: 'hard', funFact: 'Yedigöller\'i ve aşçılarıyla bilinir.' },
-  { id: 'tokat', name: 'Tokat', nameEn: 'Tokat', difficulty: 'hard', funFact: 'Tarihi konakları ve yaprak sarması meşhurdur.' },
-  { id: 'kirsehir', name: 'Kırşehir', nameEn: 'Kirsehir', difficulty: 'hard', funFact: 'Neşet Ertaş\'ın memleketi, bozkırın tezenesi.' },
-  { id: 'sinop', name: 'Sinop', nameEn: 'Sinop', difficulty: 'hard', funFact: 'Türkiye\'nin en kuzey noktası İnceburun buradadır.' },
-  { id: 'burdur', name: 'Burdur', nameEn: 'Burdur', difficulty: 'hard', funFact: 'Salda Gölü ile Türkiye\'nin Maldivleri\'ne ev sahipliği yapar.' }
+  { id: 'istanbul', name: 'İstanbul', nameEn: 'Istanbul', difficulty: 'easy', funFact: 'Asya ve Avrupa\'yı birbirine bağlayan efsanevi şehir!', funFactEn: 'The legendary city linking Asia and Europe!' },
+  { id: 'ankara', name: 'Ankara', nameEn: 'Ankara', difficulty: 'easy', funFact: 'Türkiye\'nin kalbi ve başkenti.', funFactEn: "Turkey's capital, at the heart of the country." },
+  { id: 'antalya', name: 'Antalya', nameEn: 'Antalya', difficulty: 'easy', funFact: 'Türkiye\'nin turizm başkenti, upuzun bir sahile sahip.', funFactEn: "Turkey's tourism capital, with a long stretch of coastline." },
+  { id: 'izmir', name: 'İzmir', nameEn: 'Izmir', difficulty: 'easy', funFact: 'Ege\'nin incisi, kordonuyla meşhur!', funFactEn: 'The pearl of the Aegean, famous for its waterfront promenade!' },
+  { id: 'konya', name: 'Konya', nameEn: 'Konya', difficulty: 'easy', funFact: 'Türkiye\'nin yüzölçümü en büyük ilidir!', funFactEn: "Turkey's largest province by area!" },
+  { id: 'trabzon', name: 'Trabzon', nameEn: 'Trabzon', difficulty: 'easy', funFact: 'Karadeniz\'in hırçın dalgalarına kıyısı var.', funFactEn: 'Faces the choppy waves of the Black Sea.' },
+  { id: 'hatay', name: 'Hatay', nameEn: 'Hatay', difficulty: 'easy', funFact: 'Akdeniz\'in en güney ucunda ince uzun bir şekle sahip.', funFactEn: 'A long, narrow province at the southern tip of the Mediterranean coast.' },
+  { id: 'van', name: 'Van', nameEn: 'Van', difficulty: 'easy', funFact: 'Türkiye\'nin en büyük gölüne ev sahipliği yapar.', funFactEn: "Home to Turkey's largest lake." },
+  { id: 'bursa', name: 'Bursa', nameEn: 'Bursa', difficulty: 'medium', funFact: 'Uludağ\'ın eteklerinde tarihi bir şehir.', funFactEn: 'A historic city at the foot of Mount Uludağ.' },
+  { id: 'adana', name: 'Adana', nameEn: 'Adana', difficulty: 'medium', funFact: 'Kebabıyla meşhur, Çukurova\'nın kalbi.', funFactEn: 'Famous for its kebab, at the heart of the Çukurova plain.' },
+  { id: 'samsun', name: 'Samsun', nameEn: 'Samsun', difficulty: 'medium', funFact: 'Milli Mücadelenin başladığı şehir.', funFactEn: "The city where Turkey's War of Independence began." },
+  { id: 'erzurum', name: 'Erzurum', nameEn: 'Erzurum', difficulty: 'medium', funFact: 'Palandöken dağlarıyla kış turizminin gözdesi.', funFactEn: 'A winter sports favorite thanks to the Palandöken mountains.' },
+  { id: 'diyarbakir', name: 'Diyarbakır', nameEn: 'Diyarbakir', difficulty: 'medium', funFact: 'Tarihi surları uzaydan bile görülebilir.', funFactEn: 'Its ancient city walls are said to be visible from space.' },
+  { id: 'mugla', name: 'Muğla', nameEn: 'Mugla', difficulty: 'medium', funFact: 'Türkiye\'nin en uzun sahil şeridine sahip.', funFactEn: "Home to Turkey's longest stretch of coastline." },
+  { id: 'kayseri', name: 'Kayseri', nameEn: 'Kayseri', difficulty: 'medium', funFact: 'Erciyes dağının gölgesinde ticaretiyle ünlü.', funFactEn: 'Known for its trade tradition, in the shadow of Mount Erciyes.' },
+  { id: 'bolu', name: 'Bolu', nameEn: 'Bolu', difficulty: 'hard', funFact: 'Yedigöller\'i ve aşçılarıyla bilinir.', funFactEn: 'Known for its Seven Lakes (Yedigöller) and its chefs.' },
+  { id: 'tokat', name: 'Tokat', nameEn: 'Tokat', difficulty: 'hard', funFact: 'Tarihi konakları ve yaprak sarması meşhurdur.', funFactEn: 'Famous for its historic mansions and stuffed grape leaves.' },
+  { id: 'kirsehir', name: 'Kırşehir', nameEn: 'Kirsehir', difficulty: 'hard', funFact: 'Neşet Ertaş\'ın memleketi, bozkırın tezenesi.', funFactEn: "Hometown of folk musician Neşet Ertaş, the pick of the steppe." },
+  { id: 'sinop', name: 'Sinop', nameEn: 'Sinop', difficulty: 'hard', funFact: 'Türkiye\'nin en kuzey noktası İnceburun buradadır.', funFactEn: "Home to İnceburun, Turkey's northernmost point." },
+  { id: 'burdur', name: 'Burdur', nameEn: 'Burdur', difficulty: 'hard', funFact: 'Salda Gölü ile Türkiye\'nin Maldivleri\'ne ev sahipliği yapar.', funFactEn: 'Home to Lake Salda, often called Turkey\'s Maldives.' },
+];
+
+// US states pack (#3) — new source, matched by properties.name.
+const US_STATES_METADATA = [
+  { id: 'texas', name: 'Teksas', nameEn: 'Texas', difficulty: 'easy', funFact: 'ABD\'nin Alaska\'dan sonra yüzölçümü en büyük ikinci eyaletidir.', funFactEn: 'The second-largest U.S. state by area, after Alaska.' },
+  { id: 'california', name: 'Kaliforniya', nameEn: 'California', difficulty: 'easy', funFact: 'ABD\'nin en kalabalık eyaleti, uzun bir Pasifik kıyısına sahiptir.', funFactEn: 'The most populous U.S. state, with a long Pacific coastline.' },
+  { id: 'florida', name: 'Florida', nameEn: 'Florida', difficulty: 'easy', funFact: 'Meksika Körfezi\'ne doğru uzanan ince bir yarımadadır.', funFactEn: 'A narrow peninsula reaching out into the Gulf of Mexico.' },
+  { id: 'colorado', name: 'Kolorado', nameEn: 'Colorado', difficulty: 'easy', funFact: 'Sınırları neredeyse tamamen düz çizgilerden oluşan bir dikdörtgendir.', funFactEn: 'Its borders are almost perfectly straight lines, forming a near-rectangle.' },
+  { id: 'utah', name: 'Utah', nameEn: 'Utah', difficulty: 'easy', funFact: 'Colorado gibi kenarları büyük ölçüde düz çizgilerle çizilmiştir.', funFactEn: 'Like Colorado, its edges are drawn largely with straight lines.' },
+  { id: 'nevada', name: 'Nevada', nameEn: 'Nevada', difficulty: 'easy', funFact: 'Kuzeyi ve doğusu düz, güneybatısı Colorado Nehri\'ni takip eder.', funFactEn: 'Straight to the north and east, while its southwest edge follows the Colorado River.' },
+  { id: 'idaho', name: 'Idaho', nameEn: 'Idaho', difficulty: 'easy', funFact: 'Kuzeyde ince bir çıkıntıyla Kanada sınırına kadar uzanır.', funFactEn: 'Narrows to a thin northern panhandle that reaches the Canadian border.' },
+  { id: 'new-york', name: 'New York', nameEn: 'New York', difficulty: 'medium', funFact: 'Kuzeyinde Ontario ve Erie gölleri, güneyinde Atlantik kıyısı vardır.', funFactEn: 'Bordered by Lakes Ontario and Erie to the north and the Atlantic to the south.' },
+  { id: 'washington', name: 'Washington', nameEn: 'Washington', difficulty: 'medium', funFact: 'Ülkenin kuzeybatı ucunda, Kanada sınırına komşu bir eyalettir.', funFactEn: "A state in the country's far northwest corner, bordering Canada." },
+  { id: 'oklahoma', name: 'Oklahoma', nameEn: 'Oklahoma', difficulty: 'easy', funFact: 'Kuzeybatısında "Tava Sapı" (Panhandle) adı verilen ince bir uzantısı vardır.', funFactEn: 'Has a long, narrow "panhandle" extension in its northwest.' },
 ];
 
 // Simplified DP Algorithm for point reduction
@@ -50,18 +100,18 @@ function perpendicularDistance(point, lineStart, lineEnd) {
   let x = point[0], y = point[1];
   let x1 = lineStart[0], y1 = lineStart[1];
   let x2 = lineEnd[0], y2 = lineEnd[1];
-  
+
   let A = x - x1;
   let B = y - y1;
   let C = x2 - x1;
   let D = y2 - y1;
-  
+
   let dot = A * C + B * D;
   let len_sq = C * C + D * D;
   let param = -1;
-  
+
   if (len_sq != 0) param = dot / len_sq;
-  
+
   let xx, yy;
   if (param < 0) {
     xx = x1;
@@ -73,7 +123,7 @@ function perpendicularDistance(point, lineStart, lineEnd) {
     xx = x1 + param * C;
     yy = y1 + param * D;
   }
-  
+
   let dx = x - xx;
   let dy = y - yy;
   return Math.sqrt(dx * dx + dy * dy);
@@ -83,7 +133,7 @@ function douglasPeucker(points, epsilon) {
   let maxDistance = 0;
   let index = 0;
   let end = points.length - 1;
-  
+
   for (let i = 1; i < end; i++) {
     let d = perpendicularDistance(points[i], points[0], points[end]);
     if (d > maxDistance) {
@@ -91,7 +141,7 @@ function douglasPeucker(points, epsilon) {
       maxDistance = d;
     }
   }
-  
+
   let res = [];
   if (maxDistance > epsilon) {
     let recResults1 = douglasPeucker(points.slice(0, index + 1), epsilon);
@@ -113,9 +163,39 @@ function fetchJson(url) {
   });
 }
 
-function extractPolygon(feature, epsilon = 0.5) {
+// Subdivides the longest edges of a closed path, splitting each at its
+// midpoint, until it has at least `minPoints`. Purely additive — every
+// inserted point lies exactly on an existing straight edge, so the shape
+// is unchanged; this only matters for a genuinely simple/rectangular
+// region (e.g. Colorado) whose real border has too few vertices to begin
+// with, in either the source data or after simplification.
+function densify(path, minPoints) {
+  if (path.length >= minPoints || path.length < 2) return path;
+  const pts = path.map((p) => [...p]);
+
+  while (pts.length < minPoints) {
+    let maxLen = -1;
+    let maxIdx = 0;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [x1, y1] = pts[i];
+      const [x2, y2] = pts[i + 1];
+      const len = Math.hypot(x2 - x1, y2 - y1);
+      if (len > maxLen) {
+        maxLen = len;
+        maxIdx = i;
+      }
+    }
+    const [x1, y1] = pts[maxIdx];
+    const [x2, y2] = pts[maxIdx + 1];
+    const mid = [Math.round((x1 + x2) / 2 * 100) / 100, Math.round((y1 + y2) / 2 * 100) / 100];
+    pts.splice(maxIdx + 1, 0, mid);
+  }
+  return pts;
+}
+
+function extractPolygon(feature, epsilon = 0.5, minPoints = 20) {
   if (!feature) return [];
-  
+
   let coords = feature.geometry.coordinates;
   if (feature.geometry.type === 'MultiPolygon') {
     let largest = coords[0];
@@ -124,65 +204,106 @@ function extractPolygon(feature, epsilon = 0.5) {
     }
     coords = largest;
   }
-  
+
   let outerRing = coords[0];
   let mapped = outerRing.map(pt => [pt[0], -pt[1]]);
   let simplified = douglasPeucker(mapped, epsilon);
-  return simplified.map(pt => [Math.round(pt[0] * 100) / 100, Math.round(pt[1] * 100) / 100]);
+  let rounded = simplified.map(pt => [Math.round(pt[0] * 100) / 100, Math.round(pt[1] * 100) / 100]);
+  return densify(rounded, minPoints);
+}
+
+function escapeQuotes(str) {
+  return str.replace(/'/g, "\\'");
+}
+
+// Emits `export const <exportName> = [ ... ]` to `outFile`, matching each
+// metadata entry against `geoFeatures` by `geoName ?? nameEn` (or `?? name`
+// when neither is set, for pure-lookup-by-name sources), simplifying its
+// largest ring with `meta.epsilon ?? defaultEpsilon`. Logs a WARNING and
+// skips any entry it can't find — the caller should treat any such warning
+// as a blocker, not silently ship a missing region.
+function buildRegionModule({ metadata, geoFeatures, exportName, category, defaultEpsilon, matchName, outFile }) {
+  let output = `export const ${exportName} = [\n`;
+  let missing = 0;
+
+  for (const meta of metadata) {
+    const pinned = PINNED_COUNTRY_PATHS[meta.id];
+    let path;
+    if (pinned) {
+      // Skip the live lookup entirely for a pinned id — its shape is frozen,
+      // not re-derived from (possibly drifted) upstream data.
+      path = pinned;
+    } else {
+      const lookupName = matchName(meta);
+      const feature = geoFeatures.find(f => f.properties.name === lookupName);
+      if (!feature) {
+        console.warn(`WARNING: Could not find "${lookupName}" (${meta.id}) in GeoJSON!`);
+        missing++;
+        continue;
+      }
+      const epsilon = meta.epsilon ?? defaultEpsilon;
+      path = extractPolygon(feature, epsilon);
+    }
+    output += `  {
+    id: '${meta.id}',
+    name: '${meta.name}',
+    nameEn: '${meta.nameEn}',
+    difficulty: '${meta.difficulty}',
+    category: '${category}',
+    funFact: '${escapeQuotes(meta.funFact)}',
+    funFactEn: '${escapeQuotes(meta.funFactEn)}',
+    path: ${JSON.stringify(path)}
+  },\n`;
+  }
+  output += '];\n';
+  fs.writeFileSync(outFile, output, 'utf-8');
+  console.log(`Updated ${outFile} (${metadata.length - missing}/${metadata.length} regions)`);
+  return missing;
 }
 
 async function generateData() {
+  let totalMissing = 0;
+
   console.log('Fetching countries...');
   const geoCountries = await fetchJson(COUNTRIES_URL);
-  
-  let countriesOutput = 'export const countries = [\n';
-  
-  for (const meta of COUNTRIES_METADATA) {
-    const feature = geoCountries.features.find(f => f.properties.name === meta.nameEn);
-    if (!feature) {
-      console.warn(`WARNING: Could not find ${meta.nameEn} in GeoJSON!`);
-      continue;
-    }
-    const path = extractPolygon(feature, 0.05);
-    countriesOutput += `  {
-    id: '${meta.id}',
-    name: '${meta.name}',
-    nameEn: '${meta.nameEn}',
-    difficulty: '${meta.difficulty}',
+  totalMissing += buildRegionModule({
+    metadata: COUNTRIES_METADATA,
+    geoFeatures: geoCountries.features,
+    exportName: 'countries',
     category: 'country',
-    funFact: '${meta.funFact.replace(/'/g, "\\'")}',
-    path: ${JSON.stringify(path)}
-  },\n`;
-  }
-  countriesOutput += '];\n';
-  fs.writeFileSync('src/data/countries.js', countriesOutput, 'utf-8');
-  console.log('Updated src/data/countries.js');
+    defaultEpsilon: 0.05,
+    matchName: (meta) => meta.geoName ?? meta.nameEn,
+    outFile: 'src/data/countries.js',
+  });
 
   console.log('Fetching provinces...');
   const geoProvinces = await fetchJson(TURKEY_PROVINCES_URL);
-  
-  let provincesOutput = 'export const turkeyProvinces = [\n';
-  
-  for (const meta of PROVINCES_METADATA) {
-    const feature = geoProvinces.features.find(f => f.properties.name === meta.name);
-    if (!feature) {
-      console.warn(`WARNING: Could not find ${meta.name} in GeoJSON!`);
-      continue;
-    }
-    const path = extractPolygon(feature, 0.005);
-    provincesOutput += `  {
-    id: '${meta.id}',
-    name: '${meta.name}',
-    nameEn: '${meta.nameEn}',
-    difficulty: '${meta.difficulty}',
+  totalMissing += buildRegionModule({
+    metadata: PROVINCES_METADATA,
+    geoFeatures: geoProvinces.features,
+    exportName: 'turkeyProvinces',
     category: 'province',
-    funFact: '${meta.funFact.replace(/'/g, "\\'")}',
-    path: ${JSON.stringify(path)}
-  },\n`;
+    defaultEpsilon: 0.005,
+    matchName: (meta) => meta.geoName ?? meta.name,
+    outFile: 'src/data/turkey-provinces.js',
+  });
+
+  console.log('Fetching US states...');
+  const geoStates = await fetchJson(US_STATES_URL);
+  totalMissing += buildRegionModule({
+    metadata: US_STATES_METADATA,
+    geoFeatures: geoStates.features,
+    exportName: 'usStates',
+    category: 'state',
+    defaultEpsilon: 0.03,
+    matchName: (meta) => meta.geoName ?? meta.nameEn,
+    outFile: 'src/data/us-states.js',
+  });
+
+  if (totalMissing > 0) {
+    console.error(`\n${totalMissing} region(s) could not be matched in their source GeoJSON — see WARNINGs above.`);
+    process.exitCode = 1;
   }
-  provincesOutput += '];\n';
-  fs.writeFileSync('src/data/turkey-provinces.js', provincesOutput, 'utf-8');
-  console.log('Updated src/data/turkey-provinces.js');
 }
 
 generateData().catch(console.error);
