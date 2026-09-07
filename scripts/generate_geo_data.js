@@ -15,6 +15,15 @@ const US_STATES_URL = 'https://raw.githubusercontent.com/PublicaMundi/MappingAPI
 // for it, once that's a decision someone's made on purpose.
 const PINNED_COUNTRY_PATHS = JSON.parse(fs.readFileSync(new URL('./pinned-country-paths.json', import.meta.url), 'utf-8'));
 
+// COUNTRIES_URL's `ISO3166-1-Alpha-2` is a real Natural-Earth-derived quirk:
+// 22 features (mostly disputed/uninhabited territories) ship the literal
+// placeholder "-99" instead of a real code, which would otherwise make
+// context-renderer.js's Intl.DisplayNames lookup throw and silently fall
+// back to the English name — wrong for these two, since they're common,
+// real neighbours (unlike the other ~20, which are obscure enough that an
+// English fallback is a non-issue not worth a lookup table for).
+const ISO2_OVERRIDES = { France: 'FR', Norway: 'NO' };
+
 const COUNTRIES_METADATA = [
   { id: 'turkey', name: 'Türkiye', nameEn: 'Turkey', difficulty: 'easy', funFact: 'İki kıtada yer alan tek ülke!', funFactEn: 'The only country located on two continents!' },
   { id: 'italy', name: 'İtalya', nameEn: 'Italy', difficulty: 'easy', funFact: 'Haritada çizme şekline sahip olduğu için çok kolay tanınır.', funFactEn: 'Instantly recognizable for its boot shape on the map.' },
@@ -193,23 +202,95 @@ function densify(path, minPoints) {
   return pts;
 }
 
-function extractPolygon(feature, epsilon = 0.5, minPoints = 20) {
-  if (!feature) return [];
+// Shoelace-formula ring area — units are raw lon/lat degrees squared, only
+// ever used to RANK rings against each other (main vs. islands), never as a
+// real-world area, so no projection is needed here.
+function ringArea(ring) {
+  let area = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const [x1, y1] = ring[i];
+    const [x2, y2] = ring[(i + 1) % ring.length];
+    area += x1 * y2 - x2 * y1;
+  }
+  return Math.abs(area / 2);
+}
 
-  let coords = feature.geometry.coordinates;
-  if (feature.geometry.type === 'MultiPolygon') {
-    let largest = coords[0];
-    for (let poly of coords) {
-      if (poly[0].length > largest[0].length) largest = poly;
-    }
-    coords = largest;
+function simplifyRing(ring, epsilon, minPoints) {
+  const mapped = ring.map(pt => [pt[0], -pt[1]]);
+  const simplified = douglasPeucker(mapped, epsilon);
+  const rounded = simplified.map(pt => [Math.round(pt[0] * 100) / 100, Math.round(pt[1] * 100) / 100]);
+  return densify(rounded, minPoints);
+}
+
+// Multi-part regions (#18) — extracts every OUTER ring of a (Multi)Polygon
+// feature (inner rings/holes are ignored: this is for the visual "islands"
+// outline, not topology), returns them simplified, main ring first.
+//
+// The main ring is picked by point count — the exact heuristic
+// extractPolygon() always used — so `rings[0]` is byte-identical to what
+// `path` has always been for every already-shipped non-pinned region; nobody's
+// shipped shape moves just because this function now also looks at area.
+// The remaining rings are ranked by real (shoelace) area, kept only above
+// `areaThresholdRatio` of the main ring's own area (drops slivers/rocks),
+// capped at `maxRings - 1` extras. They're decorative only (never scored),
+// so they're simplified harder than the main ring (`extraEpsilonMultiplier`)
+// and allowed a lower point-count floor — trims real weight off the main JS
+// bundle, which ships every region's rings inline.
+function extractRings(feature, epsilon, minPoints, {
+  maxRings = 7, areaThresholdRatio = 0.02, extraEpsilonMultiplier = 2, extraMinPoints = 8,
+} = {}) {
+  if (!feature) return [];
+  const coords = feature.geometry.type === 'MultiPolygon'
+    ? feature.geometry.coordinates
+    : [feature.geometry.coordinates];
+  const outerRings = coords.map(poly => poly[0]);
+
+  if (outerRings.length === 1) {
+    return [simplifyRing(outerRings[0], epsilon, minPoints)];
   }
 
-  let outerRing = coords[0];
-  let mapped = outerRing.map(pt => [pt[0], -pt[1]]);
-  let simplified = douglasPeucker(mapped, epsilon);
-  let rounded = simplified.map(pt => [Math.round(pt[0] * 100) / 100, Math.round(pt[1] * 100) / 100]);
-  return densify(rounded, minPoints);
+  let mainIndex = 0;
+  for (let i = 1; i < outerRings.length; i++) {
+    if (outerRings[i].length > outerRings[mainIndex].length) mainIndex = i;
+  }
+  const mainArea = ringArea(outerRings[mainIndex]);
+
+  const others = outerRings
+    .map((ring, i) => ({ ring, i, area: ringArea(ring) }))
+    .filter((r) => r.i !== mainIndex && r.area >= mainArea * areaThresholdRatio)
+    .sort((a, b) => b.area - a.area)
+    .slice(0, maxRings - 1);
+
+  return [
+    simplifyRing(outerRings[mainIndex], epsilon, minPoints),
+    ...others.map((o) => simplifyRing(o.ring, epsilon * extraEpsilonMultiplier, Math.min(minPoints, extraMinPoints))),
+  ];
+}
+
+function extractPolygon(feature, epsilon = 0.5, minPoints = 20) {
+  return extractRings(feature, epsilon, minPoints)[0] || [];
+}
+
+/** Raw lon/lat bbox width of a ring, in degrees — used only to pick a per-feature epsilon. */
+function ringBBoxWidth(ring) {
+  let minX = Infinity, maxX = -Infinity;
+  for (const [x] of ring) {
+    minX = Math.min(minX, x);
+    maxX = Math.max(maxX, x);
+  }
+  return maxX - minX;
+}
+
+/**
+ * Per-feature epsilon for context shapes (#18 restyle): `bboxWidth / divisor`,
+ * clamped to `[minEps, maxEps]`. Large countries hit the `maxEps` ceiling
+ * (same coarse detail as before — their scale hides it anyway); small/
+ * medium countries (Syria, South Korea, the Balkans — exactly the ones that
+ * looked visibly polygonal next to our playable targets) get proportionally
+ * finer detail instead of one flat epsilon for the whole world.
+ */
+function adaptiveEpsilon(ring, { minEps, maxEps, divisor }) {
+  return Math.min(maxEps, Math.max(minEps, ringBBoxWidth(ring) / divisor));
 }
 
 function escapeQuotes(str) {
@@ -219,31 +300,49 @@ function escapeQuotes(str) {
 // Emits `export const <exportName> = [ ... ]` to `outFile`, matching each
 // metadata entry against `geoFeatures` by `geoName ?? nameEn` (or `?? name`
 // when neither is set, for pure-lookup-by-name sources), simplifying its
-// largest ring with `meta.epsilon ?? defaultEpsilon`. Logs a WARNING and
-// skips any entry it can't find — the caller should treat any such warning
-// as a blocker, not silently ship a missing region.
+// rings with `meta.epsilon ?? defaultEpsilon`. Logs a WARNING and skips any
+// entry it can't find — the caller should treat any such warning as a
+// blocker, not silently ship a missing region.
+//
+// Multi-part regions (#18): every entry gets a `rings` array alongside the
+// existing `path` (`rings[0] === path`, always — scoring only ever reads
+// `path`, so it's untouched by any of this). A PINNED entry's `path` stays
+// completely frozen as before, but its OTHER rings (island chains etc.) are
+// still derived live from upstream — the pin only ever protected the single
+// path players are scored against, not the supplementary art. If the pinned
+// name can no longer be found upstream at all, it ships with `rings: [path]`
+// (no islands) rather than failing the build.
 function buildRegionModule({ metadata, geoFeatures, exportName, category, defaultEpsilon, matchName, outFile }) {
   let output = `export const ${exportName} = [\n`;
   let missing = 0;
 
   for (const meta of metadata) {
     const pinned = PINNED_COUNTRY_PATHS[meta.id];
+    const lookupName = matchName(meta);
+    const feature = geoFeatures.find(f => f.properties.name === lookupName);
+    const epsilon = meta.epsilon ?? defaultEpsilon;
+
     let path;
+    let rings;
     if (pinned) {
-      // Skip the live lookup entirely for a pinned id — its shape is frozen,
-      // not re-derived from (possibly drifted) upstream data.
       path = pinned;
+      if (feature) {
+        const liveRings = extractRings(feature, epsilon, 20);
+        rings = [path, ...liveRings.slice(1)];
+      } else {
+        console.warn(`WARNING: "${lookupName}" (${meta.id}) is pinned but no longer found upstream — shipping its main ring only, no extra islands.`);
+        rings = [path];
+      }
     } else {
-      const lookupName = matchName(meta);
-      const feature = geoFeatures.find(f => f.properties.name === lookupName);
       if (!feature) {
         console.warn(`WARNING: Could not find "${lookupName}" (${meta.id}) in GeoJSON!`);
         missing++;
         continue;
       }
-      const epsilon = meta.epsilon ?? defaultEpsilon;
-      path = extractPolygon(feature, epsilon);
+      rings = extractRings(feature, epsilon, 20);
+      path = rings[0];
     }
+
     output += `  {
     id: '${meta.id}',
     name: '${meta.name}',
@@ -252,13 +351,52 @@ function buildRegionModule({ metadata, geoFeatures, exportName, category, defaul
     category: '${category}',
     funFact: '${escapeQuotes(meta.funFact)}',
     funFactEn: '${escapeQuotes(meta.funFactEn)}',
-    path: ${JSON.stringify(path)}
+    path: ${JSON.stringify(path)},
+    rings: ${JSON.stringify(rings)}
   },\n`;
   }
   output += '];\n';
   fs.writeFileSync(outFile, output, 'utf-8');
   console.log(`Updated ${outFile} (${metadata.length - missing}/${metadata.length} regions)`);
   return missing;
+}
+
+// Neighbour context (#18c) — a coarse, decorative background layer showing
+// every OTHER feature in a source's full dataset (not just the ones we ship
+// as playable regions), so trace mode/the result overlay can draw
+// "surrounding land" behind the target. Reuses the SAME already-fetched
+// GeoJSON as the playable regions (countries.geojson has ~255 countries;
+// the TR/US sources cover all 81 provinces / 50 states, not just our
+// smaller played subset) — no new network dependency. Heavily simplified
+// (a much coarser epsilon than playable geometry, main ring only, no
+// densify floor) since this is background dressing, never scored or
+// traced. Written as its own module so it can be dynamically `import()`-ed
+// as a separate chunk per category, only when a trace/result screen
+// actually needs it.
+// Each entry carries its main ring plus enough to LABEL it client-side
+// without shipping a translation table: `name` (the source's own English/
+// native admin name — provinces/states just use this as-is, per-language,
+// since TR province names are already Turkish and US state names stay
+// English either way) and, for countries only, `iso2` (ISO 3166-1 alpha-2)
+// so the renderer can localize via `Intl.DisplayNames`, falling back to
+// `name` if that lookup fails or `iso2` is missing.
+function buildContextModule({ geoFeatures, exportName, outFile, epsilonOpts, getName, getIso2 }) {
+  const entries = [];
+  for (const f of geoFeatures) {
+    let coords = f.geometry.coordinates;
+    if (f.geometry.type === 'MultiPolygon') {
+      let largest = coords[0];
+      for (const poly of coords) if (poly[0].length > largest[0].length) largest = poly;
+      coords = largest;
+    }
+    const outerRing = coords[0];
+    const epsilon = adaptiveEpsilon(outerRing, epsilonOpts);
+    const ring = simplifyRing(outerRing, epsilon, 4);
+    if (ring.length <= 2) continue;
+    entries.push({ rings: [ring], name: getName(f), ...(getIso2 ? { iso2: getIso2(f) } : {}) });
+  }
+  fs.writeFileSync(outFile, `export const ${exportName} = ${JSON.stringify(entries)};\n`, 'utf-8');
+  console.log(`Updated ${outFile} (${entries.length} context shapes)`);
 }
 
 async function generateData() {
@@ -275,6 +413,21 @@ async function generateData() {
     matchName: (meta) => meta.geoName ?? meta.nameEn,
     outFile: 'src/data/countries.js',
   });
+  buildContextModule({
+    geoFeatures: geoCountries.features,
+    exportName: 'countriesContext',
+    // minEps/maxEps/divisor tuned by hand against the actual gzip size of
+    // this chunk (see #18 restyle) — keeps small/mid countries noticeably
+    // more detailed than the old flat 0.3 while staying under ~45kB gzip.
+    epsilonOpts: { minEps: 0.18, maxEps: 0.3, divisor: 160 },
+    getName: (f) => f.properties.name,
+    getIso2: (f) => {
+      const raw = f.properties['ISO3166-1-Alpha-2'];
+      if (raw && raw !== '-99') return raw;
+      return ISO2_OVERRIDES[f.properties.name] || null;
+    },
+    outFile: 'src/data/context/countries-context.js',
+  });
 
   console.log('Fetching provinces...');
   const geoProvinces = await fetchJson(TURKEY_PROVINCES_URL);
@@ -287,6 +440,13 @@ async function generateData() {
     matchName: (meta) => meta.geoName ?? meta.name,
     outFile: 'src/data/turkey-provinces.js',
   });
+  buildContextModule({
+    geoFeatures: geoProvinces.features,
+    exportName: 'provincesContext',
+    epsilonOpts: { minEps: 0.005, maxEps: 0.02, divisor: 50 },
+    getName: (f) => f.properties.name,
+    outFile: 'src/data/context/provinces-context.js',
+  });
 
   console.log('Fetching US states...');
   const geoStates = await fetchJson(US_STATES_URL);
@@ -298,6 +458,13 @@ async function generateData() {
     defaultEpsilon: 0.03,
     matchName: (meta) => meta.geoName ?? meta.nameEn,
     outFile: 'src/data/us-states.js',
+  });
+  buildContextModule({
+    geoFeatures: geoStates.features,
+    exportName: 'statesContext',
+    epsilonOpts: { minEps: 0.02, maxEps: 0.1, divisor: 100 },
+    getName: (f) => f.properties.name,
+    outFile: 'src/data/context/states-context.js',
   });
 
   if (totalMissing > 0) {

@@ -5,6 +5,7 @@ import { DrawingEngine } from '../engine/drawing-engine.js';
 import { ComparisonEngine } from '../engine/comparison-engine.js';
 import { playClick, playSubmit, playHint } from '../engine/audio-engine.js';
 import { track } from '../engine/analytics.js';
+import { getContextCanvas, getTargetStyle } from '../engine/context-renderer.js';
 
 /**
  * GameScreen - Main drawing gameplay screen
@@ -24,6 +25,12 @@ export class GameScreen {
     this.hintsRemaining = 3;
     this.pendingTimerEl = null;
     this.submitFeedbackTimer = null;
+    // Neighbour context (#18c, trace mode only) — set once the async
+    // getContextCanvas() build resolves; `renderToken` guards against a
+    // resolution from a previous round landing after the player has
+    // already moved on (this screen instance is reused across rounds).
+    this.contextCanvas = null;
+    this.renderToken = 0;
   }
 
   render(regionId, mode) {
@@ -142,22 +149,62 @@ export class GameScreen {
       },
     });
 
+    // Multi-part regions (#18): render every ring (islands included) for
+    // the visible outline — but always fit against the main ring alone
+    // (renderRegionRings/normalizeRingsToCanvas), the same transform
+    // ComparisonEngine scores against. `rings` may be absent on
+    // DOM-free-test region stubs, hence the fallback.
+    const rings = this.region.rings || [this.region.path];
+
     // In trace mode, show the silhouette as background
     if (this.mode === 'trace') {
+      // Neighbour context (#18c) — trace mode only, never blind. Built
+      // once, asynchronously (a lazy per-category chunk fetch the first
+      // time), then just drawImage()'d every render — never rebuilt per
+      // stroke. `myToken` guards a late resolution from applying itself
+      // after the player has already left this round (retry/back/next all
+      // reuse this same GameScreen instance).
+      this.contextCanvas = null;
+      const myToken = ++this.renderToken;
+      getContextCanvas(this.region, this.canvasManager.width, this.canvasManager.height, theme)
+        .then((canvas) => {
+          if (myToken !== this.renderToken || !canvas) return;
+          this.contextCanvas = canvas;
+          this.drawingEngine?.render();
+        });
+
       this.drawingEngine.setExtraRender(() => {
-        this.canvasManager.renderRegionOutline(this.region.path, {
-          color: theme === 'night' ? 'rgba(0,245,212,0.2)' : 'rgba(92,64,51,0.15)',
-          lineWidth: 3,
-          lineDash: [8, 6],
-          opacity: 0.6,
+        if (this.contextCanvas) {
+          this.canvasManager.getContext().drawImage(
+            this.contextCanvas, 0, 0, this.canvasManager.width, this.canvasManager.height
+          );
+        }
+        // Target region (#18 restyle): a Google-Maps-"selection"-style solid
+        // fill + edge, applied identically to EVERY ring (this — not the
+        // dash — is what fixed islands like Hokkaido reading as a
+        // different, inconsistent grey from the mainland), then the
+        // existing dashed trace guide layered on top of that as a second pass.
+        const targetStyle = getTargetStyle(theme);
+        this.canvasManager.renderRegionRings(rings, {
+          color: targetStyle.edge,
+          lineWidth: 1.5,
           fill: true,
-          fillColor: theme === 'night' ? 'rgba(0,245,212,0.05)' : 'rgba(200,169,81,0.08)',
+          fillColor: targetStyle.fill,
+        });
+        this.canvasManager.renderRegionRings(rings, {
+          color: theme === 'night' ? 'rgba(0,245,212,0.5)' : 'rgba(92,64,51,0.4)',
+          lineWidth: 2,
+          lineDash: [8, 6],
+          opacity: 0.8,
         });
       });
     } else {
-      // Blind mode 5% hint
+      this.renderToken++; // invalidate any in-flight context build from a previous (trace) round
+      this.contextCanvas = null;
+      // Blind mode 5% hint — renderRegionRings never reveals islands via a
+      // hint, only ever a fraction of the main ring (see its own doc comment).
       this.drawingEngine.setExtraRender(() => {
-        this.canvasManager.renderRegionOutline(this.region.path, {
+        this.canvasManager.renderRegionRings(rings, {
           hintPercent: 0.05,
           color: theme === 'night' ? 'rgba(255,215,0,0.6)' : 'rgba(218,165,32,0.6)', // Golden/Brass
           lineWidth: 4,
@@ -381,7 +428,7 @@ export class GameScreen {
     const originalExtra = this.drawingEngine.extraRenderFn;
     this.drawingEngine.setExtraRender(() => {
       if (originalExtra) originalExtra();
-      this.canvasManager.renderRegionOutline(this.region.path, {
+      this.canvasManager.renderRegionRings(this.region.rings || [this.region.path], {
         color: theme === 'night' ? 'rgba(0,245,212,0.3)' : 'rgba(139,26,26,0.2)',
         lineWidth: 2,
         lineDash: [4, 4],
@@ -468,9 +515,35 @@ export class GameScreen {
     }
   }
 
+  /**
+   * Re-fetches the neighbour-context canvas when the theme OR language
+   * changes mid-round (main.js's theme button, and updateLanguage() below,
+   * both call this) — otherwise a trace-mode round would keep showing the
+   * old theme's sea/land colors or the old language's neighbour labels
+   * until the next round starts. `getContextCanvas` itself reads the
+   * current language, so `theme` is the only thing callers need to pass.
+   * No-op outside trace mode (this.contextCanvas is always null there).
+   */
+  refreshContext(theme) {
+    if (this.mode !== 'trace' || !this.canvasManager) return;
+    this.contextCanvas = null;
+    const myToken = ++this.renderToken;
+    getContextCanvas(this.region, this.canvasManager.width, this.canvasManager.height, theme)
+      .then((canvas) => {
+        if (myToken !== this.renderToken || !canvas) return;
+        this.contextCanvas = canvas;
+        this.drawingEngine?.render();
+      });
+  }
+
   updateLanguage() {
     const el = document.getElementById('game-screen');
     if (!el) return;
+
+    // Neighbour context (#18c): its labels are localized and cached per
+    // language — without this call, the old language's labels would stick
+    // around until the next round starts.
+    this.refreshContext(this.app.gameState.getTheme());
 
     // Update region name
     const lang = getLanguage();

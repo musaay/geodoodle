@@ -7,6 +7,8 @@ import { resolveNextRegion } from '../engine/region-nav.js';
 import { nextChainRegion } from '../data/neighbors.js';
 import { applyChainLink, shouldEndChain } from '../engine/chain-engine.js';
 import { getDailyRegionPool, getDailyRegionIds, getDailyProgress, todayStr } from '../engine/daily.js';
+import { normalizeRingsToCanvasPoints, visibleRingFraction } from '../engine/canvas-manager.js';
+import { getContextCanvas, getTargetStyle } from '../engine/context-renderer.js';
 
 /**
  * Shrink `text` (drawn in the given weight, starting at `baseSize`px) until
@@ -225,12 +227,12 @@ export class ResultScreen {
     requestAnimationFrame(() => {
       const p1Container = el.querySelector('#p1-canvas-container');
       if (p1Container && p1Visual) {
-        this.renderComparisonCanvas(p1Container, p1Visual, theme);
+        this.renderComparisonCanvas(p1Container, p1Visual, theme, region);
       }
 
       const p2Container = el.querySelector('#p2-canvas-container');
       if (p2Container && p2Visual) {
-        this.renderComparisonCanvas(p2Container, p2Visual, theme);
+        this.renderComparisonCanvas(p2Container, p2Visual, theme, region);
       }
 
       this.startScoreReveal(el, { isMultiplayer, p1Score, p2Score, p1Rank });
@@ -654,7 +656,7 @@ export class ResultScreen {
     track('share', { method: 'download', daily: !!isDaily });
   }
 
-  renderComparisonCanvas(container, visualData, theme) {
+  async renderComparisonCanvas(container, visualData, theme, region) {
     if (!visualData) return;
     const displayCanvas = document.createElement('canvas');
     
@@ -682,13 +684,59 @@ export class ResultScreen {
 
     const { targetPoly, userPoly, rays } = visualData;
 
-    // 1. Draw Target Polygon (Reference) - Very light gray dashed
-    ctx.beginPath();
+    // -1. Neighbour context (#18c) — shown on the result overlay regardless
+    // of whether the round was trace or blind (only live GAMEPLAY hides it
+    // in blind mode, to keep "from memory" honest); drawn first, under
+    // everything else. Cheap to await here — it's cached after the first
+    // build for this region/size/theme.
+    if (region) {
+      const contextCanvas = await getContextCanvas(region, visualData.canvasWidth, visualData.canvasHeight, theme);
+      if (contextCanvas) {
+        ctx.drawImage(contextCanvas, 0, 0, visualData.canvasWidth, visualData.canvasHeight);
+      }
+    }
+
+    // 0. Target region (#18 restyle): islands (decorative, drawn from the
+    // SAME projection/fit as the scored main ring so they line up with it —
+    // never scored themselves, scoring only ever reads region.path ==
+    // rings[0]) plus the main ring (targetPoly), all filled/edged in the
+    // SAME Google-Maps-"selection"-style blue. Using one style for every
+    // ring (not just the main one) is what fixes an island like Hokkaido
+    // reading as a different, inconsistent grey from the mainland.
+    // An island's fit is anchored to the main ring alone (see the doc
+    // comment on normalizeRingsToCanvasPoints), so it renders wherever that
+    // puts it — mostly or entirely off-canvas for some regions (a southern
+    // Greek island, Svalbard, Hawaii). Drawing just the on-screen sliver
+    // reads as a rendering glitch, not a recognizable island, so anything
+    // less than half-visible is skipped outright rather than drawn cropped.
+    const islandRings = region?.rings?.length > 1
+      ? normalizeRingsToCanvasPoints(region.rings, visualData.canvasWidth, visualData.canvasHeight, 40)
+        .slice(1)
+        .filter((ring) => visibleRingFraction(ring, visualData.canvasWidth, visualData.canvasHeight) >= 0.5)
+      : [];
+    const targetRingsForFill = [targetPoly.map((p) => [p.x, p.y]), ...islandRings];
+    const targetStyle = getTargetStyle(theme);
+    ctx.fillStyle = targetStyle.fill;
+    ctx.strokeStyle = targetStyle.edge;
+    ctx.lineWidth = 1.5;
+    for (const ring of targetRingsForFill) {
+      if (ring.length < 3) continue;
+      ctx.beginPath();
+      ctx.moveTo(ring[0][0], ring[0][1]);
+      for (let i = 1; i < ring.length; i++) ctx.lineTo(ring[i][0], ring[i][1]);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    // 1. Draw Target Polygon (Reference) outline on top of the fill, all rings
     ctx.strokeStyle = theme === 'night' ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)';
     ctx.lineWidth = 1.5;
-    if (targetPoly.length > 0) {
-      ctx.moveTo(targetPoly[0].x, targetPoly[0].y);
-      for(let i=1; i<targetPoly.length; i++) ctx.lineTo(targetPoly[i].x, targetPoly[i].y);
+    for (const ring of targetRingsForFill) {
+      if (ring.length < 3) continue;
+      ctx.beginPath();
+      ctx.moveTo(ring[0][0], ring[0][1]);
+      for (let i = 1; i < ring.length; i++) ctx.lineTo(ring[i][0], ring[i][1]);
       ctx.closePath();
       ctx.stroke();
     }

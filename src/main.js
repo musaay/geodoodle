@@ -301,6 +301,7 @@ class GeoDoodleApp {
       // Update drawing engine theme if game is active
       if (this.screens.game.drawingEngine) {
         this.screens.game.drawingEngine.setTheme(this.gameState.getTheme());
+        this.screens.game.refreshContext(this.gameState.getTheme());
         this.screens.game.drawingEngine.render();
       }
     });
