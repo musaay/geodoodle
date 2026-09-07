@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { isSoundEnabled as audioEngineSoundEnabled } from './audio-engine.js';
+import { getDailyRegionPool, getDailyRegionIds } from './daily.js';
 
 // Minimal in-memory localStorage stub — GameState persists via the global,
 // and this test environment has no DOM/localStorage of its own.
@@ -113,6 +114,97 @@ describe('GameState chain mode (#15)', () => {
     state.setChainMode('blind');
     state.resetAll();
     expect(state.getChainMode()).toBe('trace');
+  });
+});
+
+describe('GameState Daily Triple (#17)', () => {
+  beforeEach(() => {
+    globalThis.localStorage.clear();
+  });
+
+  function dateStrOffset(days) {
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  it('has no entry for a day nothing was played', () => {
+    const state = new GameState();
+    expect(state.getDailyEntry(dateStrOffset(0))).toBeNull();
+  });
+
+  it('accumulates best-of-day scores per region and a running total', () => {
+    const state = new GameState();
+    state.recordDailyResult('turkey', 60);
+    state.recordDailyResult('italy', 80);
+
+    const today = dateStrOffset(0);
+    expect(state.getDailyEntry(today)).toEqual({
+      scores: { turkey: 60, italy: 80 },
+      total: 140,
+    });
+  });
+
+  it('keeps the higher score on a repeat attempt at the same region', () => {
+    const state = new GameState();
+    state.recordDailyResult('turkey', 60);
+    state.recordDailyResult('turkey', 45); // worse — ignored
+    state.recordDailyResult('turkey', 90); // better — kept
+
+    expect(state.getDailyEntry(dateStrOffset(0))).toEqual({
+      scores: { turkey: 90 },
+      total: 90,
+    });
+  });
+
+  it('migrates a pre-#17 single-region entry when adding a second region', () => {
+    const today = dateStrOffset(0);
+    globalThis.localStorage.setItem('geodoodle_state', JSON.stringify({
+      daily: { [today]: { regionId: 'turkey', score: 72 } },
+    }));
+
+    const state = new GameState();
+    expect(state.getDailyEntry(today)).toEqual({ scores: { turkey: 72 }, total: 72 });
+
+    state.recordDailyResult('italy', 50);
+    expect(state.getDailyEntry(today)).toEqual({
+      scores: { turkey: 72, italy: 50 },
+      total: 122,
+    });
+  });
+
+  describe('getDailyStreak', () => {
+    it('grandfathers a pre-#17 single-region day as played', () => {
+      const yesterday = dateStrOffset(-1);
+      globalThis.localStorage.setItem('geodoodle_state', JSON.stringify({
+        daily: { [yesterday]: { regionId: 'turkey', score: 72 } },
+      }));
+
+      const state = new GameState();
+      state.recordDailyResult('turkey', 80); // completes today with 1 region — see below
+      // Today only has 1 of 3 regions played, so today itself doesn't count,
+      // but the streak should still reach back through yesterday's old-shape day.
+      expect(state.getDailyStreak()).toBeGreaterThanOrEqual(1);
+    });
+
+    it('requires all 3 regions for a post-#17 day to count', () => {
+      const state = new GameState();
+      const today = dateStrOffset(0);
+      const pool = getDailyRegionPool();
+      const regionIds = getDailyRegionIds(today, pool, 3);
+
+      state.recordDailyResult(regionIds[0], 80);
+      state.recordDailyResult(regionIds[1], 70);
+      // Only 2 of 3 played — shouldn't count as a played day yet.
+      expect(state.getDailyStreak()).toBe(0);
+
+      state.recordDailyResult(regionIds[2], 60);
+      // All 3 played — now it counts.
+      expect(state.getDailyStreak()).toBe(1);
+    });
   });
 });
 

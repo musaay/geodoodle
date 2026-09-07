@@ -6,6 +6,7 @@ import { track } from '../engine/analytics.js';
 import { resolveNextRegion } from '../engine/region-nav.js';
 import { nextChainRegion } from '../data/neighbors.js';
 import { applyChainLink, shouldEndChain } from '../engine/chain-engine.js';
+import { getDailyRegionPool, getDailyRegionIds, getDailyProgress, todayStr } from '../engine/daily.js';
 
 /**
  * Shrink `text` (drawn in the given weight, starting at `baseSize`px) until
@@ -88,6 +89,21 @@ export class ResultScreen {
       this.chainOutcome = { ended, chain: previewChain, reason };
     }
 
+    // Daily Triple (#17) — single-player only, and never during a chain
+    // round (the two never actually co-occur, but this keeps them from
+    // fighting over the primary button if they somehow did). Unlike the
+    // chain, there's nothing to preview/defer here: game-screen.js already
+    // called recordDailyResult() (a plain best-of-day write, safe to repeat
+    // on retry) before navigating here, so gameState already reflects this
+    // round.
+    this.dailyOutcome = null;
+    if (!isMultiplayer && session.isDaily && !session.chain?.active) {
+      const dailyRegionIds = getDailyRegionIds(todayStr(), getDailyRegionPool(), 3);
+      const entry = this.app.gameState.getDailyEntry(todayStr());
+      const progress = getDailyProgress(entry, dailyRegionIds);
+      this.dailyOutcome = { dailyRegionIds, progress };
+    }
+
     const modeText = session.isDaily ? t('mode_text_daily') : (mode === 'blind' ? t('mode_text_blind') : t('mode_text_trace'));
     const lang = getLanguage();
     const isEnglishName = lang === 'en' && !!region.nameEn;
@@ -150,11 +166,11 @@ export class ResultScreen {
       `;
     };
 
-    let chainHudHtml = '';
+    let extraHudHtml = '';
     let primaryButtonLabel = t('next_region');
     if (this.chainOutcome) {
       const { chain } = this.chainOutcome;
-      chainHudHtml = `
+      extraHudHtml = `
         <div style="display:flex; align-items:center; gap:0.4rem; background: var(--button-bg); padding: 0.4rem 0.9rem; border-radius: var(--radius-full); font-size: 0.8rem; font-weight: 600; color: var(--text-primary); border: 1px solid var(--border-color);">
           <i data-lucide="route" style="width:14px; height:14px; color: var(--accent-primary);"></i>
           ${t('chain_hud', { count: chain.links.length, multiplier: chain.multiplier.toFixed(1), total: chain.total })}
@@ -168,6 +184,17 @@ export class ResultScreen {
         const nextName = nextRegion ? (nextIsEnglish ? nextRegion.nameEn : nextRegion.name) : '';
         primaryButtonLabel = t('chain_next_neighbor', { region: nextName });
       }
+    } else if (this.dailyOutcome) {
+      const { progress } = this.dailyOutcome;
+      extraHudHtml = `
+        <div style="display:flex; align-items:center; gap:0.4rem; background: var(--button-bg); padding: 0.4rem 0.9rem; border-radius: var(--radius-full); font-size: 0.8rem; font-weight: 600; color: var(--text-primary); border: 1px solid var(--border-color);">
+          <i data-lucide="calendar" style="width:14px; height:14px; color: var(--accent-primary);"></i>
+          ${t('daily_hud', { played: progress.playedCount, total: progress.total })}
+        </div>
+      `;
+      primaryButtonLabel = progress.isComplete
+        ? t('daily_view_summary')
+        : t('daily_next', { n: progress.playedCount + 1 });
     }
 
     el.innerHTML = `
@@ -177,7 +204,7 @@ export class ResultScreen {
       </div>
 
       <div style="display: flex; flex-direction: column; align-items: center; margin-top: 2rem; gap: 1rem; margin-bottom: 2rem;">
-        ${chainHudHtml}
+        ${extraHudHtml}
         <button class="btn btn-primary" data-action="next-region" style="display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 2rem; border-radius: var(--radius-full); font-size: 1rem; font-weight: 600; box-shadow: var(--shadow); border: none;">
           <i data-lucide="arrow-right" style="width: 20px; height: 20px;"></i> ${primaryButtonLabel}
         </button>
@@ -236,6 +263,24 @@ export class ResultScreen {
           session.chain = chain;
           session.isDaily = false;
           this.app.startGame(chain.nextRegionId, chain.mode);
+        }
+        return;
+      }
+
+      if (this.dailyOutcome) {
+        const { dailyRegionIds, progress } = this.dailyOutcome;
+        this.cleanup();
+        session.currentPlayer = 1;
+        if (progress.isComplete) {
+          track('daily_complete', { total: progress.total });
+          this.app.showDailySummary({
+            regionIds: dailyRegionIds,
+            scores: this.app.gameState.getDailyEntry(todayStr())?.scores || {},
+            total: progress.total,
+            streak: this.app.gameState.getDailyStreak(),
+          });
+        } else {
+          this.app.enterDaily(progress.nextRegionId);
         }
         return;
       }
@@ -578,7 +623,7 @@ export class ResultScreen {
 
     const file = new File([blob], 'geodoodle.png', { type: 'image/png' });
     const shareText = isDaily
-      ? t('share_text_daily', { score: primaryScore })
+      ? t('share_text_daily', { region: regionNameDisplay, score: primaryScore })
       : t('share_text_normal', { region: regionNameDisplay, score: primaryScore });
     // Deep-links the shared link back into the specific region (or the
     // daily challenge) rather than the home page, tagged for GA4 attribution.

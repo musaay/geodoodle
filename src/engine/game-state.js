@@ -1,6 +1,9 @@
 import { levels } from '../data/levels.js';
 import { setLanguage } from '../i18n.js';
-import { computeStreak, todayStr } from './daily.js';
+import {
+  computeStreak, todayStr, getDailyRegionPool, getDailyRegionIds,
+  normalizeDailyEntry, getDailyProgress,
+} from './daily.js';
 import { setSoundEnabled as syncAudioEngineSoundEnabled } from './audio-engine.js';
 
 const STORAGE_KEY = 'geodoodle_state';
@@ -15,10 +18,31 @@ const DEFAULT_STATE = {
   onboardingSeen: false,
   soundEnabled: true,
   language: 'tr',
-  daily: {}, // 'YYYY-MM-DD' -> { regionId, score }
+  // 'YYYY-MM-DD' -> { scores: {regionId: bestScore}, total } (#17). Older
+  // entries may still be the pre-#17 shape { regionId, score } — always read
+  // through normalizeDailyEntry()/getDailyEntry() rather than this directly.
+  daily: {},
   bestChain: null, // { links, total, date } — best-ever Neighbor Chain run (#15)
   chainMode: 'trace', // last mode chosen on the Neighbor Chain home card (#15)
 };
+
+/**
+ * A fresh copy of DEFAULT_STATE with its own nested containers. Plain
+ * `{ ...DEFAULT_STATE }` only shallow-copies — `daily`/`completedRegions`/
+ * `unlockedLevels` would stay the SAME object/array shared by every
+ * GameState instance that falls back to it, so writes on one instance
+ * (`this.state.daily[date] = ...`) would silently corrupt DEFAULT_STATE
+ * itself for every instance created afterward in the same JS session.
+ * Always build a state object through this, never spread DEFAULT_STATE directly.
+ */
+function freshDefaultState() {
+  return {
+    ...DEFAULT_STATE,
+    completedRegions: {},
+    unlockedLevels: [...DEFAULT_STATE.unlockedLevels],
+    daily: {},
+  };
+}
 
 /**
  * Picks a starting language for a true first run, from the browser's
@@ -64,7 +88,7 @@ export class GameState {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
-        const loadedState = { ...DEFAULT_STATE, ...JSON.parse(saved) };
+        const loadedState = { ...freshDefaultState(), ...JSON.parse(saved) };
         setLanguage(loadedState.language);
         return loadedState;
       }
@@ -73,7 +97,7 @@ export class GameState {
     }
     // True first run — no saved preference to respect, so pick the language
     // from the browser instead of always defaulting to Turkish.
-    const state = { ...DEFAULT_STATE, language: detectBrowserLanguage() };
+    const state = { ...freshDefaultState(), language: detectBrowserLanguage() };
     setLanguage(state.language);
     return state;
   }
@@ -182,22 +206,46 @@ export class GameState {
     return stars;
   }
 
-  // Daily Challenge
+  // Daily Triple (#17) — was a single daily region pre-#17; `daily[date]` is
+  // now `{ scores: {regionId: bestScore}, total }`, best-of-day per region.
   recordDailyResult(regionId, score) {
     const date = todayStr();
-    const existing = this.state.daily[date];
-    if (!existing || score > existing.score) {
-      this.state.daily[date] = { regionId, score };
+    const existing = normalizeDailyEntry(this.state.daily[date]) || { scores: {}, total: 0 };
+    const prevScore = existing.scores[regionId] || 0;
+    if (score > prevScore) {
+      const scores = { ...existing.scores, [regionId]: score };
+      this.state.daily[date] = {
+        scores,
+        total: Object.values(scores).reduce((sum, s) => sum + s, 0),
+      };
     }
     this.save();
   }
 
-  getDailyRecord(dateStr) {
-    return this.state.daily[dateStr] || null;
+  /** Normalized `{ scores, total }` for a date, or `null` if nothing was played that day. */
+  getDailyEntry(dateStr) {
+    return normalizeDailyEntry(this.state.daily[dateStr]);
   }
 
+  /**
+   * A day counts toward the streak once its whole Daily Triple set is
+   * complete — except pre-#17 days, which only ever had one region and are
+   * grandfathered in as "played" so migrating to the 3-region set doesn't
+   * retroactively break streaks people already built.
+   */
   getDailyStreak() {
-    return computeStreak(Object.keys(this.state.daily), todayStr());
+    const pool = getDailyRegionPool();
+    const playedDates = Object.entries(this.state.daily)
+      .filter(([date, raw]) => {
+        const isPreV17Shape = raw && raw.regionId != null && !raw.scores;
+        if (isPreV17Shape) return true;
+        const normalized = normalizeDailyEntry(raw);
+        if (!normalized) return false;
+        const regionIds = getDailyRegionIds(date, pool, 3);
+        return getDailyProgress(normalized, regionIds).isComplete;
+      })
+      .map(([date]) => date);
+    return computeStreak(playedDates, todayStr());
   }
 
   // Neighbor Chain (#15)
@@ -291,7 +339,7 @@ export class GameState {
   }
 
   resetAll() {
-    this.state = { ...DEFAULT_STATE };
+    this.state = freshDefaultState();
     syncAudioEngineSoundEnabled(this.state.soundEnabled);
     localStorage.removeItem(STORAGE_KEY);
     this.save();

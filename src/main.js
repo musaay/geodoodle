@@ -25,7 +25,9 @@ const icons = {
 import { getLanguage } from './i18n.js';
 import { GameState } from './engine/game-state.js';
 import { parseDeepLink } from './engine/deep-link.js';
-import { getDailyRegionPool, getDailyRegionId, todayStr } from './engine/daily.js';
+import {
+  getDailyRegionPool, getDailyRegionId, getDailyRegionIds, getDailyProgress, todayStr,
+} from './engine/daily.js';
 import { getRegionById, levels } from './data/levels.js';
 import { track } from './engine/analytics.js';
 import { createErrorTracker } from './engine/error-tracker.js';
@@ -36,6 +38,7 @@ import { GameScreen } from './screens/game-screen.js';
 import { ResultScreen } from './screens/result-screen.js';
 import { StatsScreen } from './screens/stats-screen.js';
 import { ChainSummaryScreen } from './screens/chain-summary-screen.js';
+import { DailySummaryScreen } from './screens/daily-summary-screen.js';
 
 import { HandoffScreen } from './screens/handoff-screen.js';
 
@@ -64,6 +67,7 @@ class GeoDoodleApp {
       stats: new StatsScreen(this),
       handoff: new HandoffScreen(this),
       chainSummary: new ChainSummaryScreen(this),
+      dailySummary: new DailySummaryScreen(this),
     };
 
     // Apply saved theme
@@ -117,12 +121,17 @@ class GeoDoodleApp {
       this.startGame(link.regionId, link.mode);
       return true;
     } else if (link.type === 'daily') {
-      const dailyRegionId = getDailyRegionId(todayStr(), getDailyRegionPool());
-      if (!dailyRegionId) return false;
-      session.playerCount = 1;
-      session.currentPlayer = 1;
-      session.isDaily = true;
-      this.startGame(dailyRegionId, 'blind');
+      // Daily Triple (#17): jump straight into the next unplayed region of
+      // today's 3-region set. If today's set is already complete, there's
+      // nothing to jump into — fall through to the normal home screen
+      // (which shows today's completed total) instead of forcing a replay.
+      const dateStr = todayStr();
+      const regionIds = getDailyRegionIds(dateStr, getDailyRegionPool(), 3);
+      if (regionIds.length === 0) return false;
+      const entry = this.gameState.getDailyEntry(dateStr);
+      const progress = getDailyProgress(entry, regionIds);
+      if (progress.isComplete) return false;
+      this.enterDaily(progress.nextRegionId);
       return true;
     }
     return false;
@@ -217,6 +226,24 @@ class GeoDoodleApp {
 
   showChainSummary(summary) {
     this.navigateTo(this.screens.chainSummary.render(summary));
+  }
+
+  showDailySummary(summary) {
+    this.navigateTo(this.screens.dailySummary.render(summary));
+  }
+
+  /**
+   * Enters one round of the Daily Triple (#17) — always blind mode,
+   * single player, regardless of whatever the home screen's own mode
+   * selection or chain toggle is currently set to. Shared by the home
+   * screen's daily card and the `?daily=1` deep link.
+   */
+  enterDaily(regionId) {
+    const session = this.gameState.session;
+    session.playerCount = 1;
+    session.currentPlayer = 1;
+    session.isDaily = true;
+    this.startGame(regionId, 'blind');
   }
 
   /**

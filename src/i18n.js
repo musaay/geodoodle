@@ -23,9 +23,10 @@ const translations = {
     statistics: 'İstatistikler',
     regions: 'bölge',
     fun_fact: 'Bilgi: GeoDoodle\'da {count} farklı bölge seni bekliyor!',
-    daily_title: 'Günün Bölgesi',
+    daily_title: 'Günün 3\'lüsü',
     daily_streak: '{count} gün seri',
-    daily_today_score: 'Bugün: {score}',
+    daily_progress: '{played}/3 tamamlandı',
+    daily_complete_today: 'Bugün tamamlandı: {total}/300',
     privacy_link: 'Gizlilik',
     chain_title: 'Komşu Zinciri',
     chain_desc: 'Bir bölgeden komşusuna zincirle, çarpanı büyüt!',
@@ -42,7 +43,7 @@ const translations = {
     hint_title: 'İpucu ({count} kaldı)',
     mode_text_blind: 'HAFIZADAN',
     mode_text_trace: 'EĞİTİM',
-    mode_text_daily: 'GÜNÜN BÖLGESİ',
+    mode_text_daily: 'GÜNÜN 3\'LÜSÜ',
     tool_thin_title: 'İnce Kalem',
     tool_thin: 'İnce',
     tool_medium_title: 'Orta Kalem',
@@ -86,11 +87,15 @@ const translations = {
     result_share: 'PAYLAŞ',
     player: 'O', // Oyuncu (O1, O2)
     share_text_normal: 'GeoDoodle\'da {region} sınırını çizdim: {score}/100!',
-    share_text_daily: 'Günün Bölgesi\'nde {score} aldım — beni geçebilir misin?',
+    share_text_daily: 'Günün 3\'lüsü — {region}: {score}/100. Sen kaç alırsın?',
     chain_hud: 'Zincir: {count} halka · ×{multiplier} · {total} puan',
     chain_next_neighbor: 'Sıradaki komşu: {region} →',
     chain_view_summary: 'Zincir özeti →',
     share_text_chain: 'GeoDoodle\'da {links} halkalık komşu zinciri: {total} puan!',
+    daily_hud: 'Günün 3\'lüsü: {played}/3 · Toplam {total}',
+    daily_next: 'Sıradaki: {n}/3 →',
+    daily_view_summary: 'Özeti gör →',
+    share_text_daily_triple: 'Günün 3\'lüsünde {total}/300 aldım — beni geçebilir misin?',
 
     // Stats Screen
     stats_total_drawings: 'Toplam Çizim',
@@ -118,6 +123,14 @@ const translations = {
     chain_summary_menu: 'Menüye Dön',
     chain_summary_best_ever: 'En iyi zincirin: {links} halka · {total} puan',
     chain_summary_copied: 'Panoya kopyalandı!',
+
+    // Daily Summary Screen
+    daily_summary_title: 'Günün 3\'lüsü Tamamlandı!',
+    daily_summary_total: 'TOPLAM PUAN',
+    daily_summary_tomorrow: 'Yarın yeni set!',
+    daily_summary_share: 'Paylaş',
+    daily_summary_menu: 'Menüye Dön',
+    daily_summary_copied: 'Panoya kopyalandı!',
 
     // Handoff Screen
     handoff_title: 'Sıra Sende!',
@@ -151,9 +164,10 @@ const translations = {
     statistics: 'Statistics',
     regions: 'regions',
     fun_fact: 'Did you know: {count} different regions are waiting for you!',
-    daily_title: 'Daily Challenge',
+    daily_title: 'Daily Triple',
     daily_streak: '{count} day streak',
-    daily_today_score: 'Today: {score}',
+    daily_progress: '{played}/3 complete',
+    daily_complete_today: 'Completed today: {total}/300',
     privacy_link: 'Privacy',
     chain_title: 'Neighbor Chain',
     chain_desc: 'Chain one region into its neighbor, build the multiplier!',
@@ -170,7 +184,7 @@ const translations = {
     hint_title: 'Hint ({count} left)',
     mode_text_blind: 'FROM MEMORY',
     mode_text_trace: 'TRAINING',
-    mode_text_daily: 'DAILY CHALLENGE',
+    mode_text_daily: 'DAILY TRIPLE',
     tool_thin_title: 'Thin Pen',
     tool_thin: 'Thin',
     tool_medium_title: 'Medium Pen',
@@ -214,11 +228,15 @@ const translations = {
     result_share: 'SHARE',
     player: 'P', // Player (P1, P2)
     share_text_normal: 'I drew {region}\'s border on GeoDoodle: {score}/100!',
-    share_text_daily: 'I scored {score} on today\'s Daily Challenge — can you beat me?',
+    share_text_daily: 'Daily Triple — {region}: {score}/100. Can you beat it?',
     chain_hud: 'Chain: {count} links · ×{multiplier} · {total} pts',
     chain_next_neighbor: 'Next neighbor: {region} →',
     chain_view_summary: 'View chain summary →',
     share_text_chain: 'I chained {links} neighboring regions on GeoDoodle: {total} points!',
+    daily_hud: 'Daily Triple: {played}/3 · Total {total}',
+    daily_next: 'Next: {n}/3 →',
+    daily_view_summary: 'View summary →',
+    share_text_daily_triple: 'I scored {total}/300 on today\'s Daily Triple — can you beat me?',
 
     // Stats Screen
     stats_total_drawings: 'Total Drawings',
@@ -246,6 +264,14 @@ const translations = {
     chain_summary_menu: 'Back to Menu',
     chain_summary_best_ever: 'Your best chain: {links} links · {total} pts',
     chain_summary_copied: 'Copied to clipboard!',
+
+    // Daily Summary Screen
+    daily_summary_title: 'Daily Triple Complete!',
+    daily_summary_total: 'TOTAL SCORE',
+    daily_summary_tomorrow: 'New set tomorrow!',
+    daily_summary_share: 'Share',
+    daily_summary_menu: 'Back to Menu',
+    daily_summary_copied: 'Copied to clipboard!',
 
     // Handoff Screen
     handoff_title: 'Your Turn!',
