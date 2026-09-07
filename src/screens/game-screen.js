@@ -213,6 +213,7 @@ export class GameScreen {
     // Back
     el.querySelector('[data-action="back"]').addEventListener('click', () => {
       this.cleanup();
+      this.app.abandonActiveChain();
       this.app.showLevelSelect();
     });
 

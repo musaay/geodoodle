@@ -44,6 +44,78 @@ describe('GameState onboarding flag', () => {
   });
 });
 
+describe('GameState best chain (#15)', () => {
+  beforeEach(() => {
+    globalThis.localStorage.clear();
+  });
+
+  it('defaults to no best chain', () => {
+    const state = new GameState();
+    expect(state.getBestChain()).toBeNull();
+  });
+
+  it('records the first result as the best and persists it', () => {
+    const state = new GameState();
+    const isNewBest = state.recordChainResult(3, 250);
+    expect(isNewBest).toBe(true);
+    expect(state.getBestChain()).toMatchObject({ links: 3, total: 250 });
+
+    const reloaded = new GameState();
+    expect(reloaded.getBestChain()).toMatchObject({ links: 3, total: 250 });
+  });
+
+  it('only replaces the best when the new total is higher', () => {
+    const state = new GameState();
+    state.recordChainResult(3, 250);
+
+    expect(state.recordChainResult(2, 100)).toBe(false);
+    expect(state.getBestChain()).toMatchObject({ links: 3, total: 250 });
+
+    expect(state.recordChainResult(5, 400)).toBe(true);
+    expect(state.getBestChain()).toMatchObject({ links: 5, total: 400 });
+  });
+
+  it('is cleared by resetAll', () => {
+    const state = new GameState();
+    state.recordChainResult(3, 250);
+    state.resetAll();
+    expect(state.getBestChain()).toBeNull();
+  });
+});
+
+describe('GameState chain mode (#15)', () => {
+  beforeEach(() => {
+    globalThis.localStorage.clear();
+  });
+
+  it('defaults to trace', () => {
+    const state = new GameState();
+    expect(state.getChainMode()).toBe('trace');
+  });
+
+  it('persists a chosen mode across reloads', () => {
+    const state = new GameState();
+    state.setChainMode('blind');
+    expect(state.getChainMode()).toBe('blind');
+
+    const reloaded = new GameState();
+    expect(reloaded.getChainMode()).toBe('blind');
+  });
+
+  it('ignores an invalid mode', () => {
+    const state = new GameState();
+    state.setChainMode('not-a-mode');
+    expect(state.getChainMode()).toBe('trace');
+  });
+
+  it('is reset to trace by resetAll', () => {
+    const state = new GameState();
+    state.setChainMode('blind');
+    state.resetAll();
+    expect(state.getChainMode()).toBe('trace');
+  });
+});
+
 describe('GameState sound preference', () => {
   beforeEach(() => {
     globalThis.localStorage.clear();

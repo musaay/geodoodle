@@ -27,6 +27,9 @@ const translations = {
     daily_streak: '{count} gün seri',
     daily_today_score: 'Bugün: {score}',
     privacy_link: 'Gizlilik',
+    chain_title: 'Komşu Zinciri',
+    chain_desc: 'Bir bölgeden komşusuna zincirle, çarpanı büyüt!',
+    chain_best: 'En iyi: {links} halka · {total}',
 
     // Level Select Screen
     levels_trace: 'Eğitim Seviyeleri',
@@ -84,6 +87,10 @@ const translations = {
     player: 'O', // Oyuncu (O1, O2)
     share_text_normal: 'GeoDoodle\'da {region} sınırını çizdim: {score}/100!',
     share_text_daily: 'Günün Bölgesi\'nde {score} aldım — beni geçebilir misin?',
+    chain_hud: 'Zincir: {count} halka · ×{multiplier} · {total} puan',
+    chain_next_neighbor: 'Sıradaki komşu: {region} →',
+    chain_view_summary: 'Zincir özeti →',
+    share_text_chain: 'GeoDoodle\'da {links} halkalık komşu zinciri: {total} puan!',
 
     // Stats Screen
     stats_total_drawings: 'Toplam Çizim',
@@ -100,6 +107,17 @@ const translations = {
     stats_start: 'Başla',
     stats_reset_all: 'Tüm İlerlemeyi Sıfırla',
     stats_reset_confirm: 'Tüm ilerlemen silinecek. Emin misin?',
+
+    // Chain Summary Screen
+    chain_summary_title: 'Zincir Tamamlandı!',
+    chain_summary_new_best: 'Yeni rekor! 🎉',
+    chain_summary_total: 'TOPLAM PUAN',
+    chain_summary_links: '{count} Halka',
+    chain_summary_play_again: 'Yeni Zincir',
+    chain_summary_share: 'Paylaş',
+    chain_summary_menu: 'Menüye Dön',
+    chain_summary_best_ever: 'En iyi zincirin: {links} halka · {total} puan',
+    chain_summary_copied: 'Panoya kopyalandı!',
 
     // Handoff Screen
     handoff_title: 'Sıra Sende!',
@@ -137,6 +155,9 @@ const translations = {
     daily_streak: '{count} day streak',
     daily_today_score: 'Today: {score}',
     privacy_link: 'Privacy',
+    chain_title: 'Neighbor Chain',
+    chain_desc: 'Chain one region into its neighbor, build the multiplier!',
+    chain_best: 'Best: {links} links · {total}',
 
     // Level Select Screen
     levels_trace: 'Training Levels',
@@ -194,6 +215,10 @@ const translations = {
     player: 'P', // Player (P1, P2)
     share_text_normal: 'I drew {region}\'s border on GeoDoodle: {score}/100!',
     share_text_daily: 'I scored {score} on today\'s Daily Challenge — can you beat me?',
+    chain_hud: 'Chain: {count} links · ×{multiplier} · {total} pts',
+    chain_next_neighbor: 'Next neighbor: {region} →',
+    chain_view_summary: 'View chain summary →',
+    share_text_chain: 'I chained {links} neighboring regions on GeoDoodle: {total} points!',
 
     // Stats Screen
     stats_total_drawings: 'Total Drawings',
@@ -210,6 +235,17 @@ const translations = {
     stats_start: 'Start',
     stats_reset_all: 'Reset All Progress',
     stats_reset_confirm: 'All your progress will be deleted. Are you sure?',
+
+    // Chain Summary Screen
+    chain_summary_title: 'Chain Complete!',
+    chain_summary_new_best: 'New best! 🎉',
+    chain_summary_total: 'TOTAL SCORE',
+    chain_summary_links: '{count} Links',
+    chain_summary_play_again: 'New Chain',
+    chain_summary_share: 'Share',
+    chain_summary_menu: 'Back to Menu',
+    chain_summary_best_ever: 'Your best chain: {links} links · {total} pts',
+    chain_summary_copied: 'Copied to clipboard!',
 
     // Handoff Screen
     handoff_title: 'Your Turn!',

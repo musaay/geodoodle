@@ -16,6 +16,8 @@ const DEFAULT_STATE = {
   soundEnabled: true,
   language: 'tr',
   daily: {}, // 'YYYY-MM-DD' -> { regionId, score }
+  bestChain: null, // { links, total, date } — best-ever Neighbor Chain run (#15)
+  chainMode: 'trace', // last mode chosen on the Neighbor Chain home card (#15)
 };
 
 /**
@@ -54,6 +56,7 @@ export class GameState {
       currentRegionId: null,
       currentMode: null,
       isDaily: false,
+      chain: null, // { active, mode, links: [{region,score,value}], multiplier, total } — Neighbor Chain (#15)
     };
   }
 
@@ -195,6 +198,32 @@ export class GameState {
 
   getDailyStreak() {
     return computeStreak(Object.keys(this.state.daily), todayStr());
+  }
+
+  // Neighbor Chain (#15)
+  getBestChain() {
+    return this.state.bestChain || null;
+  }
+
+  getChainMode() {
+    return this.state.chainMode || 'trace';
+  }
+
+  setChainMode(mode) {
+    if (mode !== 'trace' && mode !== 'blind') return;
+    this.state.chainMode = mode;
+    this.save();
+  }
+
+  /** Records a finished chain's result, keeping it only if it beats the current best (by total). Returns whether it's a new best. */
+  recordChainResult(linkCount, total) {
+    const existing = this.state.bestChain;
+    const isNewBest = !existing || total > existing.total;
+    if (isNewBest) {
+      this.state.bestChain = { links: linkCount, total, date: todayStr() };
+      this.save();
+    }
+    return isNewBest;
   }
 
   // Hints (per-game allowance lives in GameScreen; this is the lifetime counter)

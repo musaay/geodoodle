@@ -1,9 +1,11 @@
 import { t, getLanguage, localeUpperCase } from '../i18n.js';
-import { getRank } from '../data/levels.js';
+import { getRank, getRegionById, getAllRegions } from '../data/levels.js';
 import { playResult, playTick, isHighRank } from '../engine/audio-engine.js';
 import { startCountUp } from '../engine/count-up.js';
 import { track } from '../engine/analytics.js';
 import { resolveNextRegion } from '../engine/region-nav.js';
+import { nextChainRegion } from '../data/neighbors.js';
+import { applyChainLink, shouldEndChain } from '../engine/chain-engine.js';
 
 /**
  * Shrink `text` (drawn in the given weight, starting at `baseSize`px) until
@@ -68,6 +70,24 @@ export class ResultScreen {
 
     const nextTarget = resolveNextRegion(region.id, mode, (levelId) => this.app.gameState.isLevelUnlocked(levelId));
 
+    // Neighbor Chain (#15) — single-player only. Computes what applying this
+    // round to the active chain (if any) WOULD look like, purely, for the
+    // HUD/button below — but doesn't commit it (mutate session.chain, save
+    // bestChain, or fire chain_link/chain_end) until the player actually
+    // presses the primary button. That way "Retry" (which never reads
+    // `this.chainOutcome`) leaves the chain exactly as it was before this
+    // round, letting a bad link be redrawn instead of locking it in.
+    this.chainOutcome = null;
+    if (!isMultiplayer && session.chain?.active) {
+      const regionsById = Object.fromEntries(getAllRegions().map((r) => [r.id, r]));
+      const playedIds = [...session.chain.links.map((l) => l.region), region.id];
+      const nextRegionId = nextChainRegion(region.id, playedIds, regionsById);
+      const previewChain = applyChainLink(session.chain, region.id, score, nextRegionId);
+      const ended = !previewChain.active;
+      const reason = ended ? (shouldEndChain(score) ? 'score' : 'exhausted') : null;
+      this.chainOutcome = { ended, chain: previewChain, reason };
+    }
+
     const modeText = session.isDaily ? t('mode_text_daily') : (mode === 'blind' ? t('mode_text_blind') : t('mode_text_trace'));
     const lang = getLanguage();
     const isEnglishName = lang === 'en' && !!region.nameEn;
@@ -130,6 +150,26 @@ export class ResultScreen {
       `;
     };
 
+    let chainHudHtml = '';
+    let primaryButtonLabel = t('next_region');
+    if (this.chainOutcome) {
+      const { chain } = this.chainOutcome;
+      chainHudHtml = `
+        <div style="display:flex; align-items:center; gap:0.4rem; background: var(--button-bg); padding: 0.4rem 0.9rem; border-radius: var(--radius-full); font-size: 0.8rem; font-weight: 600; color: var(--text-primary); border: 1px solid var(--border-color);">
+          <i data-lucide="route" style="width:14px; height:14px; color: var(--accent-primary);"></i>
+          ${t('chain_hud', { count: chain.links.length, multiplier: chain.multiplier.toFixed(1), total: chain.total })}
+        </div>
+      `;
+      if (this.chainOutcome.ended) {
+        primaryButtonLabel = t('chain_view_summary');
+      } else {
+        const nextRegion = getRegionById(chain.nextRegionId);
+        const nextIsEnglish = lang === 'en' && !!nextRegion?.nameEn;
+        const nextName = nextRegion ? (nextIsEnglish ? nextRegion.nameEn : nextRegion.name) : '';
+        primaryButtonLabel = t('chain_next_neighbor', { region: nextName });
+      }
+    }
+
     el.innerHTML = `
       <div style="display: flex; flex-direction: ${isMultiplayer ? 'row' : 'column'}; gap: 2rem; width: 100%;">
         ${renderPlayerHtml(1, p1Rank, p1Visual)}
@@ -137,8 +177,9 @@ export class ResultScreen {
       </div>
 
       <div style="display: flex; flex-direction: column; align-items: center; margin-top: 2rem; gap: 1rem; margin-bottom: 2rem;">
+        ${chainHudHtml}
         <button class="btn btn-primary" data-action="next-region" style="display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 2rem; border-radius: var(--radius-full); font-size: 1rem; font-weight: 600; box-shadow: var(--shadow); border: none;">
-          <i data-lucide="arrow-right" style="width: 20px; height: 20px;"></i> ${t('next_region')}
+          <i data-lucide="arrow-right" style="width: 20px; height: 20px;"></i> ${primaryButtonLabel}
         </button>
         <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; justify-content: center;">
           <button class="btn btn-secondary" data-action="retry" style="display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1.5rem; border-radius: var(--radius-full); font-size: 0.85rem; font-weight: 500; border: none; background: var(--button-bg);">
@@ -169,12 +210,36 @@ export class ResultScreen {
     });
 
     el.querySelector('[data-action="retry"]').addEventListener('click', () => {
+      // Chain-aware: this.chainOutcome was never committed (see render()
+      // above), so a chain in progress is left exactly as it was — retrying
+      // a link doesn't cost the chain anything.
       this.cleanup();
       this.app.gameState.session.currentPlayer = 1;
       this.app.startGame(region.id, mode);
     });
 
     el.querySelector('[data-action="next-region"]').addEventListener('click', () => {
+      if (this.chainOutcome) {
+        // Committing here, not in render(): only now does this round's
+        // result actually become part of the chain (saved bestScore,
+        // GA4 chain_link/chain_end, session.chain update).
+        const { chain, ended, reason } = this.chainOutcome;
+        track('chain_link', { n: chain.links.length, region: region.id, score });
+        this.cleanup();
+        session.currentPlayer = 1;
+        if (ended) {
+          const isNewBestChain = this.app.gameState.recordChainResult(chain.links.length, chain.total);
+          track('chain_end', { links: chain.links.length, total: chain.total, reason });
+          session.chain = null;
+          this.app.showChainSummary({ links: chain.links, total: chain.total, mode: chain.mode, isNewBestChain });
+        } else {
+          session.chain = chain;
+          session.isDaily = false;
+          this.app.startGame(chain.nextRegionId, chain.mode);
+        }
+        return;
+      }
+
       track('next_region', { from: region.id, to: nextTarget?.regionId ?? null, mode });
       this.cleanup();
       this.app.gameState.session.currentPlayer = 1;
@@ -188,6 +253,7 @@ export class ResultScreen {
 
     el.querySelector('[data-action="next"]').addEventListener('click', () => {
       this.cleanup();
+      this.app.abandonActiveChain();
       this.app.gameState.session.currentPlayer = 1;
       this.app.showHome();
     });

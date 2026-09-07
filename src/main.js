@@ -11,7 +11,7 @@ import {
   createIcons,
   ArrowLeft, ArrowRight, BarChart2, Brain, Calendar, CheckCircle2, Eraser,
   Flame, Home, Lightbulb, Lock, Map, Moon, Paintbrush, Pen, PenTool,
-  RotateCcw, Share2, Star, Sun, Target, Trash2, TrendingUp, Undo2, User, Users,
+  RotateCcw, Route, Share2, Star, Sun, Target, Trash2, TrendingUp, Undo2, User, Users,
   Volume2, VolumeX,
 } from 'lucide';
 
@@ -19,7 +19,7 @@ import {
 const icons = {
   ArrowLeft, ArrowRight, BarChart2, Brain, Calendar, CheckCircle2, Eraser,
   Flame, Home, Lightbulb, Lock, Map, Moon, Paintbrush, Pen, PenTool,
-  RotateCcw, Share2, Star, Sun, Target, Trash2, TrendingUp, Undo2, User, Users,
+  RotateCcw, Route, Share2, Star, Sun, Target, Trash2, TrendingUp, Undo2, User, Users,
   Volume2, VolumeX,
 };
 import { getLanguage } from './i18n.js';
@@ -29,11 +29,13 @@ import { getDailyRegionPool, getDailyRegionId, todayStr } from './engine/daily.j
 import { getRegionById, levels } from './data/levels.js';
 import { track } from './engine/analytics.js';
 import { createErrorTracker } from './engine/error-tracker.js';
+import { createChain } from './engine/chain-engine.js';
 import { HomeScreen } from './screens/home-screen.js';
 import { LevelSelectScreen } from './screens/level-select.js';
 import { GameScreen } from './screens/game-screen.js';
 import { ResultScreen } from './screens/result-screen.js';
 import { StatsScreen } from './screens/stats-screen.js';
+import { ChainSummaryScreen } from './screens/chain-summary-screen.js';
 
 import { HandoffScreen } from './screens/handoff-screen.js';
 
@@ -61,6 +63,7 @@ class GeoDoodleApp {
       result: new ResultScreen(this),
       stats: new StatsScreen(this),
       handoff: new HandoffScreen(this),
+      chainSummary: new ChainSummaryScreen(this),
     };
 
     // Apply saved theme
@@ -210,6 +213,45 @@ class GeoDoodleApp {
 
   showStats() {
     this.navigateTo(this.screens.stats.render());
+  }
+
+  showChainSummary(summary) {
+    this.navigateTo(this.screens.chainSummary.render(summary));
+  }
+
+  /**
+   * Starts a fresh Neighbor Chain (#15): single player, a random level-1
+   * (easy) region as the starting link, in whichever mode the chain card's
+   * own toggle was set to. Reused by both the home screen card and the
+   * chain summary's "play again" button.
+   */
+  startChain(mode) {
+    const easyLevel = levels.find((l) => l.id === 1);
+    const regionId = easyLevel.regions[Math.floor(Math.random() * easyLevel.regions.length)];
+
+    const session = this.gameState.session;
+    session.playerCount = 1;
+    session.currentPlayer = 1;
+    session.isDaily = false;
+    session.chain = createChain(mode);
+
+    track('chain_start', { mode });
+    this.startGame(regionId, mode);
+  }
+
+  /**
+   * Ends an in-progress chain as abandoned (score/next-region-driven chain
+   * ends are handled where they happen, in ResultScreen). Safe to call
+   * unconditionally — no-ops when there's no active chain — so every
+   * mid-chain "leave the game" path (game screen back button, result
+   * screen retry/back-to-menu) can just call this before navigating.
+   */
+  abandonActiveChain() {
+    const chain = this.gameState.session.chain;
+    if (chain?.active) {
+      track('chain_end', { links: chain.links.length, total: chain.total, reason: 'abandoned' });
+      this.gameState.session.chain = null;
+    }
   }
 
   /** Create fixed top controls (theme & language) */

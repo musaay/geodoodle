@@ -773,6 +773,29 @@ h1, h2, h3, h4, h5, h6 {
   font-size: 1rem;
   color: inherit;
 }
+/* Neighbor Chain (#15) home-card mode toggle — same segmented-control
+   look as .player-card, kept as its own class so its click handlers
+   don't collide with the player-count toggle's querySelectorAll('.player-card'). */
+.chain-mode-btn {
+  background-color: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: var(--text-secondary);
+}
+.chain-mode-btn:hover {
+  color: var(--text-primary);
+  background-color: var(--button-bg);
+}
+.chain-mode-btn.active {
+  background-color: var(--accent-primary);
+  color: var(--bg-primary);
+}
+.chain-mode-btn h4 {
+  margin: 0;
+  color: inherit;
+}
 .mode-card.active {
   border-color: var(--primary);
   background-color: rgba(0, 245, 212, 0.1); /* Primary color with opacity */
