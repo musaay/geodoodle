@@ -6,6 +6,7 @@ import { ComparisonEngine } from '../engine/comparison-engine.js';
 import { playClick, playSubmit, playHint } from '../engine/audio-engine.js';
 import { track } from '../engine/analytics.js';
 import { getContextCanvas, getTargetStyle } from '../engine/context-renderer.js';
+import { loadRegionGeometry } from '../engine/region-geometry.js';
 
 /**
  * GameScreen - Main drawing gameplay screen
@@ -31,6 +32,11 @@ export class GameScreen {
     // already moved on (this screen instance is reused across rounds).
     this.contextCanvas = null;
     this.renderToken = 0;
+    // #20 follow-up: guards the async loadRegionGeometry() below the same
+    // way — a Retry/Back/Next that starts a NEW round before a previous
+    // round's geometry fetch resolves must not have that stale fetch
+    // overwrite `this.region` out from under the new round.
+    this.geomToken = 0;
   }
 
   render(regionId, mode) {
@@ -50,6 +56,7 @@ export class GameScreen {
     });
 
     const theme = this.app.gameState.getTheme();
+    const myGeomToken = ++this.geomToken;
     const el = document.createElement('div');
     el.className = 'screen';
     el.id = 'game-screen';
@@ -118,8 +125,16 @@ export class GameScreen {
       </div>
     `;
 
-    // Initialize after DOM insertion
-    requestAnimationFrame(() => {
+    // Initialize after DOM insertion. Geometry (path/rings/context) is a
+    // lazy per-region chunk (#20 follow-up) — awaited here before drawing
+    // anything; a few KB, so no loading state is shown. `myGeomToken` drops
+    // a stale resolution if the player has already left this round (retry/
+    // back/next all reuse this same GameScreen instance).
+    requestAnimationFrame(async () => {
+      const geometry = await loadRegionGeometry(regionId);
+      if (myGeomToken !== this.geomToken) return;
+      this.region = { ...this.region, ...geometry };
+
       this.initCanvas(el, theme);
       if (!this.app.gameState.hasSeenOnboarding()) {
         this.showOnboarding(el);
@@ -136,6 +151,14 @@ export class GameScreen {
     const container = el.querySelector('#drawing-canvas');
     if (!container) return;
 
+    // Read from `this.theme` (not the `theme` parameter) inside the
+    // extraRenderFn closures below, and keep it updated on every theme
+    // change (see refreshContext) — otherwise a mid-round toggle updates
+    // the context layer and the rest of the UI but leaves the target's own
+    // fill/edge/dashed-guide color stuck at whatever theme the round
+    // started in, since a closure capturing the OLD `theme` argument keeps
+    // reading it on every subsequent stroke render.
+    this.theme = theme;
     this.canvasContainerEl = container;
     this.canvasManager = new CanvasManager(container);
     this.drawingEngine = new DrawingEngine(this.canvasManager, {
@@ -184,7 +207,7 @@ export class GameScreen {
         // dash — is what fixed islands like Hokkaido reading as a
         // different, inconsistent grey from the mainland), then the
         // existing dashed trace guide layered on top of that as a second pass.
-        const targetStyle = getTargetStyle(theme);
+        const targetStyle = getTargetStyle(this.theme);
         this.canvasManager.renderRegionRings(rings, {
           color: targetStyle.edge,
           lineWidth: 1.5,
@@ -192,7 +215,7 @@ export class GameScreen {
           fillColor: targetStyle.fill,
         });
         this.canvasManager.renderRegionRings(rings, {
-          color: theme === 'night' ? 'rgba(0,245,212,0.5)' : 'rgba(92,64,51,0.4)',
+          color: this.theme === 'night' ? 'rgba(0,245,212,0.5)' : 'rgba(92,64,51,0.4)',
           lineWidth: 2,
           lineDash: [8, 6],
           opacity: 0.8,
@@ -206,7 +229,7 @@ export class GameScreen {
       this.drawingEngine.setExtraRender(() => {
         this.canvasManager.renderRegionRings(rings, {
           hintPercent: 0.05,
-          color: theme === 'night' ? 'rgba(255,215,0,0.6)' : 'rgba(218,165,32,0.6)', // Golden/Brass
+          color: this.theme === 'night' ? 'rgba(255,215,0,0.6)' : 'rgba(218,165,32,0.6)', // Golden/Brass
           lineWidth: 4,
           lineDash: [4, 4]
         });
@@ -525,7 +548,16 @@ export class GameScreen {
    * No-op outside trace mode (this.contextCanvas is always null there).
    */
   refreshContext(theme) {
-    if (this.mode !== 'trace' || !this.canvasManager) return;
+    // Keeps the target's own fill/edge/dashed-guide color (read from
+    // `this.theme` by the extraRenderFn closures set up in initCanvas) in
+    // sync too — not just the context layer below — see initCanvas's
+    // comment on `this.theme` for why a plain `theme` closure parameter
+    // isn't enough here.
+    this.theme = theme;
+    if (this.mode !== 'trace' || !this.canvasManager) {
+      this.drawingEngine?.render();
+      return;
+    }
     this.contextCanvas = null;
     const myToken = ++this.renderToken;
     getContextCanvas(this.region, this.canvasManager.width, this.canvasManager.height, theme)
@@ -591,6 +623,16 @@ export class GameScreen {
   }
 
   cleanup() {
+    // #20 follow-up: invalidates any in-flight loadRegionGeometry() for the
+    // round being abandoned — without this, a Back press before geometry
+    // resolves (this.canvasManager/drawingEngine are still null at that
+    // point, so the destroy() calls below are no-ops) let that resolution
+    // land later anyway, building a real CanvasManager/DrawingEngine
+    // (ResizeObserver + pointer listeners) against this now-detached
+    // screen's DOM — a leak `render()`'s own token bump never catches
+    // because it only guards against a NEW round starting, not against no
+    // next round starting at all.
+    this.geomToken++;
     if (this.gameTimer) {
       clearInterval(this.gameTimer);
       this.gameTimer = null;

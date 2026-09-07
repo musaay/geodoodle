@@ -54,12 +54,13 @@ describe('getNeighbors', () => {
 describe('nextChainRegion', () => {
   // Minimal fake region map — enough to exercise resolver logic without the
   // full data files (unrelated to the real hand-maintained NEIGHBORS table).
+  // Only metadata (category/centroid) is needed — #20 follow-up.
   const regionsById = {
-    a: { id: 'a', category: 'country', path: [[0, 0]] },
-    b: { id: 'b', category: 'country', path: [[1, 0]] },
-    c: { id: 'c', category: 'country', path: [[10, 0]] },
-    d: { id: 'd', category: 'country', path: [[10.5, 0]] },
-    e: { id: 'e', category: 'province', path: [[0, 0]] }, // different category
+    a: { id: 'a', category: 'country', centroid: { x: 0, y: 0 } },
+    b: { id: 'b', category: 'country', centroid: { x: 1, y: 0 } },
+    c: { id: 'c', category: 'country', centroid: { x: 10, y: 0 } },
+    d: { id: 'd', category: 'country', centroid: { x: 10.5, y: 0 } },
+    e: { id: 'e', category: 'province', centroid: { x: 0, y: 0 } }, // different category
   };
 
   it('falls back to the nearest unplayed same-category region when neighbors are exhausted/unknown', () => {

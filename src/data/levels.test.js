@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { levels, getAllRegions, getRegionById } from './levels.js';
 import { getDailyRegionPool, getDailyRegionId } from '../engine/daily.js';
+import { loadRegionGeometry } from '../engine/region-geometry.js';
 
 describe('region data', () => {
   const regions = getAllRegions();
@@ -14,15 +15,29 @@ describe('region data', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it('every region has id/name/nameEn/funFact/funFactEn and a path of at least 20 points', () => {
+  // #20 follow-up: path/rings moved out of this metadata array into a lazy
+  // per-region geometry chunk (src/data/regions/<id>.js) — metadata now
+  // carries a cheap `centroid` instead, checked here; the geometry chunk's
+  // own path length is checked separately below.
+  it('every region has id/name/nameEn/funFact/funFactEn and a centroid', () => {
     for (const region of regions) {
       expect(region.id, `${JSON.stringify(region.id)} id`).toBeTruthy();
       expect(region.name, `${region.id} name`).toBeTruthy();
       expect(region.nameEn, `${region.id} nameEn`).toBeTruthy();
       expect(region.funFact, `${region.id} funFact`).toBeTruthy();
       expect(region.funFactEn, `${region.id} funFactEn`).toBeTruthy();
-      expect(Array.isArray(region.path), `${region.id} path`).toBe(true);
-      expect(region.path.length, `${region.id} path length`).toBeGreaterThanOrEqual(20);
+      expect(region.centroid, `${region.id} centroid`).toBeTruthy();
+      expect(typeof region.centroid.x, `${region.id} centroid.x`).toBe('number');
+      expect(typeof region.centroid.y, `${region.id} centroid.y`).toBe('number');
+    }
+  });
+
+  it('every region\'s lazy geometry chunk has a path of at least 20 points', async () => {
+    for (const region of regions) {
+      const geometry = await loadRegionGeometry(region.id);
+      expect(geometry, `${region.id} geometry`).toBeTruthy();
+      expect(Array.isArray(geometry.path), `${region.id} path`).toBe(true);
+      expect(geometry.path.length, `${region.id} path length`).toBeGreaterThanOrEqual(20);
     }
   });
 });

@@ -119,14 +119,6 @@ export function getNeighbors(id) {
   return set ? Array.from(set) : [];
 }
 
-/** Average of a region's raw path points — same coordinate space (lng, -lat) for every region, so Euclidean distance between two centroids is a reasonable proxy for real-world distance. */
-function centroid(path) {
-  if (!path || path.length === 0) return null;
-  let sx = 0, sy = 0;
-  for (const [x, y] of path) { sx += x; sy += y; }
-  return { x: sx / path.length, y: sy / path.length };
-}
-
 function distance(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
@@ -135,13 +127,18 @@ function distance(a, b) {
  * Resolves the next region in a Neighbor Chain (#15).
  *
  * - Prefers a random unplayed neighbour of `currentId`.
- * - Falls back to the nearest unplayed region (by path centroid) within the
+ * - Falls back to the nearest unplayed region (by centroid) within the
  *   same category (country/province/state) as `currentId`.
  * - Returns `null` when nothing unplayed is left in either pool.
  *
  * `playedIds` is any iterable of ids already used in this chain (current
  * region included) — pure and DOM-free; `regionsById` is a plain
  * `{ [id]: region }` map so callers/tests don't need the real data files.
+ * Only METADATA is needed here (`category`, `centroid`) — #20 follow-up
+ * moved full geometry (`path`/`rings`) out of the main bundle into a lazy
+ * per-region chunk, so chain resolution reads the cheap, always-in-memory
+ * `centroid` field instead of ever needing to load geometry just to rank
+ * regions by rough distance.
  */
 export function nextChainRegion(currentId, playedIds, regionsById) {
   const played = new Set(playedIds);
@@ -154,18 +151,15 @@ export function nextChainRegion(currentId, playedIds, regionsById) {
   }
 
   const current = regionsById[currentId];
-  if (!current) return null;
-  const currentCentroid = centroid(current.path);
-  if (!currentCentroid) return null;
+  if (!current?.centroid) return null;
 
   let nearestId = null;
   let nearestDist = Infinity;
   for (const [id, region] of Object.entries(regionsById)) {
     if (id === currentId || played.has(id)) continue;
     if (region.category !== current.category) continue;
-    const c = centroid(region.path);
-    if (!c) continue;
-    const d = distance(currentCentroid, c);
+    if (!region.centroid) continue;
+    const d = distance(current.centroid, region.centroid);
     if (d < nearestDist) {
       nearestDist = d;
       nearestId = id;

@@ -150,6 +150,7 @@ function privacyPage() {
     <p>GeoDoodle bugün itibarıyla seni tanımlayan hiçbir kişisel veri toplamaz.</p>
     <p>Anonim kullanım istatistikleri (sayfa görüntülemeleri, oynanan oyunlar) için Google Analytics kullanıyoruz. Bu veriler Google tarafından işlenir ve çerezler kullanır; ancak bizim tarafımızdan seni tanımlayan hiçbir kişisel veri toplanmaz.</p>
     <p>Üçüncü taraf reklam hizmetleri kullanılmaya başlandığında bu sayfa güncellenecektir.</p>
+    <p>Harita verisi kaynakları: Ülke sınırları © <a href="https://www.naturalearthdata.com/">Natural Earth</a> (kamu malı). Türkiye il sınırları © <a href="https://www.geoboundaries.org/">geoBoundaries</a>, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. ABD eyalet sınırları © Natural Earth (kamu malı).</p>
     <p>Sorularınız için: <a href="${repoUrl}">${repoUrl}</a></p>
   </section>
 
@@ -161,6 +162,7 @@ function privacyPage() {
     <p>As of today, GeoDoodle does not collect any personally identifying data.</p>
     <p>We use Google Analytics for anonymous usage statistics (page views, game plays). This data is processed by Google and involves cookies; however, no personally identifying data is collected by us.</p>
     <p>This page will be updated if and when third-party advertising services are introduced.</p>
+    <p>Map data sources: Country boundaries © <a href="https://www.naturalearthdata.com/">Natural Earth</a> (public domain). Turkish province boundaries © <a href="https://www.geoboundaries.org/">geoBoundaries</a>, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. US state boundaries © Natural Earth (public domain).</p>
     <p>Questions: <a href="${repoUrl}">${repoUrl}</a></p>
   </section>
 

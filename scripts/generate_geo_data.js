@@ -1,9 +1,26 @@
 import fs from 'fs';
 import https from 'https';
+import zlib from 'zlib';
+import { topology } from 'topojson-server';
+import { presimplify, quantile, simplify } from 'topojson-simplify';
+import { feature as topoFeature, mesh as topoMesh } from 'topojson-client';
+import { clipPolygonToRect, projectMercatorPoint } from '../src/engine/canvas-manager.js';
 
 const COUNTRIES_URL = 'https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson';
-const TURKEY_PROVINCES_URL = 'https://raw.githubusercontent.com/cihadturhan/tr-geojson/master/geo/tr-cities-utf8.json';
-const US_STATES_URL = 'https://raw.githubusercontent.com/PublicaMundi/MappingAPI/master/data/geojson/us-states.json';
+// #20 follow-up: tr-cities-utf8 (the previous source) only had 43 raw points
+// for İstanbul and shared almost no vertices with its neighbours (see the
+// report) — geoBoundaries' TUR ADM1 release is public-domain-adjacent
+// (CC BY 4.0, attribution required — see the privacy page/README) and one
+// coherently-digitized dataset, so adjacent provinces genuinely share
+// vertices. Two variants are published for the same release; FULL is tried
+// first for maximum detail, falling back to SIMPLIFIED per-category if FULL
+// blows the geometry budget (see generateData).
+const TURKEY_PROVINCES_URL_FULL = 'https://github.com/wmgeolab/geoBoundaries/raw/9469f09/releaseData/gbOpen/TUR/ADM1/geoBoundaries-TUR-ADM1.geojson';
+const TURKEY_PROVINCES_URL_SIMPLIFIED = 'https://github.com/wmgeolab/geoBoundaries/raw/9469f09/releaseData/gbOpen/TUR/ADM1/geoBoundaries-TUR-ADM1_simplified.geojson';
+// #20 follow-up: switched from PublicaMundi (which shared only ~97.5% of a
+// real border's vertices, e.g. Texas/Oklahoma) to Natural Earth 10m admin-1,
+// public domain, measured at ~99% for the same pair.
+const US_STATES_URL = 'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_admin_1_states_provinces.geojson';
 
 // The upstream COUNTRIES_URL source has changed its geometry since these 15
 // were first generated (re-simplified for most; a genuinely different
@@ -63,7 +80,7 @@ const COUNTRIES_METADATA = [
   { id: 'thailand', name: 'Tayland', nameEn: 'Thailand', difficulty: 'medium', funFact: 'Güneydeki uzun yarımadasıyla bir fil başına benzetilir.', funFactEn: "Often compared to an elephant's head, thanks to its long southern peninsula." },
   { id: 'saudi-arabia', name: 'Suudi Arabistan', nameEn: 'Saudi Arabia', difficulty: 'medium', funFact: 'Arap Yarımadası\'nın büyük bölümünü kaplayan geniş bir çöl ülkesidir.', funFactEn: 'A vast desert country covering most of the Arabian Peninsula.' },
 
-  { id: 'switzerland', name: 'İsviçre', nameEn: 'Switzerland', difficulty: 'hard', epsilon: 0.02, funFact: 'Alpler\'in ortasında, tamamen karayla çevrili küçük bir ülkedir.', funFactEn: 'A small, landlocked country in the heart of the Alps.' },
+  { id: 'switzerland', name: 'İsviçre', nameEn: 'Switzerland', difficulty: 'hard', funFact: 'Alpler\'in ortasında, tamamen karayla çevrili küçük bir ülkedir.', funFactEn: 'A small, landlocked country in the heart of the Alps.' },
   { id: 'south-africa', name: 'Güney Afrika', nameEn: 'South Africa', difficulty: 'hard', funFact: 'İçinde bağımsız bir ülke olan Lesotho\'yu tamamen çevreler.', funFactEn: 'Completely surrounds the independent country of Lesotho.' },
 ];
 
@@ -104,67 +121,17 @@ const US_STATES_METADATA = [
   { id: 'oklahoma', name: 'Oklahoma', nameEn: 'Oklahoma', difficulty: 'easy', funFact: 'Kuzeybatısında "Tava Sapı" (Panhandle) adı verilen ince bir uzantısı vardır.', funFactEn: 'Has a long, narrow "panhandle" extension in its northwest.' },
 ];
 
-// Simplified DP Algorithm for point reduction
-function perpendicularDistance(point, lineStart, lineEnd) {
-  let x = point[0], y = point[1];
-  let x1 = lineStart[0], y1 = lineStart[1];
-  let x2 = lineEnd[0], y2 = lineEnd[1];
-
-  let A = x - x1;
-  let B = y - y1;
-  let C = x2 - x1;
-  let D = y2 - y1;
-
-  let dot = A * C + B * D;
-  let len_sq = C * C + D * D;
-  let param = -1;
-
-  if (len_sq != 0) param = dot / len_sq;
-
-  let xx, yy;
-  if (param < 0) {
-    xx = x1;
-    yy = y1;
-  } else if (param > 1) {
-    xx = x2;
-    yy = y2;
-  } else {
-    xx = x1 + param * C;
-    yy = y1 + param * D;
-  }
-
-  let dx = x - xx;
-  let dy = y - yy;
-  return Math.sqrt(dx * dx + dy * dy);
-}
-
-function douglasPeucker(points, epsilon) {
-  let maxDistance = 0;
-  let index = 0;
-  let end = points.length - 1;
-
-  for (let i = 1; i < end; i++) {
-    let d = perpendicularDistance(points[i], points[0], points[end]);
-    if (d > maxDistance) {
-      index = i;
-      maxDistance = d;
-    }
-  }
-
-  let res = [];
-  if (maxDistance > epsilon) {
-    let recResults1 = douglasPeucker(points.slice(0, index + 1), epsilon);
-    let recResults2 = douglasPeucker(points.slice(index), epsilon);
-    res = recResults1.slice(0, recResults1.length - 1).concat(recResults2);
-  } else {
-    res = [points[0], points[end]];
-  }
-  return res;
-}
-
-function fetchJson(url) {
+// Follows redirects (geoBoundaries' GitHub release assets are Git LFS files,
+// served via a 302 to media.githubusercontent.com) up to a small hop limit.
+function fetchJson(url, redirectsLeft = 5) {
   return new Promise((resolve, reject) => {
     https.get(url, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        res.resume();
+        if (redirectsLeft <= 0) { reject(new Error(`Too many redirects fetching ${url}`)); return; }
+        resolve(fetchJson(res.headers.location, redirectsLeft - 1));
+        return;
+      }
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => resolve(JSON.parse(data)));
@@ -178,9 +145,10 @@ function fetchJson(url) {
 // is unchanged; this only matters for a genuinely simple/rectangular
 // region (e.g. Colorado) whose real border has too few vertices to begin
 // with, in either the source data or after simplification.
-function densify(path, minPoints) {
+function densify(path, minPoints, precision) {
   if (path.length >= minPoints || path.length < 2) return path;
   const pts = path.map((p) => [...p]);
+  const p = 10 ** precision;
 
   while (pts.length < minPoints) {
     let maxLen = -1;
@@ -196,7 +164,7 @@ function densify(path, minPoints) {
     }
     const [x1, y1] = pts[maxIdx];
     const [x2, y2] = pts[maxIdx + 1];
-    const mid = [Math.round((x1 + x2) / 2 * 100) / 100, Math.round((y1 + y2) / 2 * 100) / 100];
+    const mid = [Math.round((x1 + x2) / 2 * p) / p, Math.round((y1 + y2) / 2 * p) / p];
     pts.splice(maxIdx + 1, 0, mid);
   }
   return pts;
@@ -215,134 +183,532 @@ function ringArea(ring) {
   return Math.abs(area / 2);
 }
 
-function simplifyRing(ring, epsilon, minPoints) {
-  const mapped = ring.map(pt => [pt[0], -pt[1]]);
-  const simplified = douglasPeucker(mapped, epsilon);
-  const rounded = simplified.map(pt => [Math.round(pt[0] * 100) / 100, Math.round(pt[1] * 100) / 100]);
-  return densify(rounded, minPoints);
+// Converts a topology-simplified outer ring (still raw [lon, lat], real —
+// not quantized — coordinates, per topojson-client's feature()/mesh()) to
+// our stored [lon, -lat] convention, rounded to `precision` decimal places
+// (4 for countries, 5 for provinces/states — see generateData; applied
+// identically to path/rings/context/borders at this last step, per #20's
+// report: a coarser 2-decimal rounding was destroying real detail at
+// province scale — Istanbul's main ring only had 40 points at 2dp).
+function toStoredRing(ring, precision) {
+  const p = 10 ** precision;
+  return ring.map(([x, y]) => [Math.round(x * p) / p, Math.round(-y * p) / p]);
 }
 
-// Multi-part regions (#18) — extracts every OUTER ring of a (Multi)Polygon
-// feature (inner rings/holes are ignored: this is for the visual "islands"
-// outline, not topology), returns them simplified, main ring first.
+// Multi-part regions (#18) — extracts every OUTER ring of an ALREADY
+// topology-simplified (Multi)Polygon feature (inner rings/holes are
+// ignored: this is for the visual "islands" outline, not real topology),
+// main ring first, converted to our stored convention. No further
+// simplification happens here — the topology this feature came from was
+// already simplified ONCE for the whole category (see
+// buildCategoryTopology), which is what keeps two adjacent features'
+// shared border vertex-identical; simplifying a ring again per-call, like
+// the old Douglas-Peucker pipeline did, would undo that.
 //
-// The main ring is picked by point count — the exact heuristic
-// extractPolygon() always used — so `rings[0]` is byte-identical to what
-// `path` has always been for every already-shipped non-pinned region; nobody's
-// shipped shape moves just because this function now also looks at area.
-// The remaining rings are ranked by real (shoelace) area, kept only above
-// `areaThresholdRatio` of the main ring's own area (drops slivers/rocks),
-// capped at `maxRings - 1` extras. They're decorative only (never scored),
-// so they're simplified harder than the main ring (`extraEpsilonMultiplier`)
-// and allowed a lower point-count floor — trims real weight off the main JS
-// bundle, which ships every region's rings inline.
-function extractRings(feature, epsilon, minPoints, {
-  maxRings = 7, areaThresholdRatio = 0.02, extraEpsilonMultiplier = 2, extraMinPoints = 8,
+// The main ring is the one with the largest real (shoelace) area — with
+// every region now generated from one shared topology rather than
+// independently, point-count is no longer a meaningful proxy for "the
+// actual mainland" (see the Japan/Spain/Italy/Australia findings in #20's
+// report, all of which had a real ISLAND spliced into a historically
+// "byte-identical" point-count-selected ring). Extra rings are ranked the
+// same way, kept only above `areaThresholdRatio` of the main ring's own
+// area (drops slivers/rocks), capped at `maxRings - 1` extras.
+function extractRingsFromTopologyFeature(feature, {
+  maxRings = 7, areaThresholdRatio = 0.02, minPoints = 8, precision = 4,
 } = {}) {
   if (!feature) return [];
   const coords = feature.geometry.type === 'MultiPolygon'
     ? feature.geometry.coordinates
     : [feature.geometry.coordinates];
-  const outerRings = coords.map(poly => poly[0]);
+  const outerRings = coords.map((poly) => poly[0]).filter((r) => r && r.length >= 3);
+  if (outerRings.length === 0) return [];
 
-  if (outerRings.length === 1) {
-    return [simplifyRing(outerRings[0], epsilon, minPoints)];
-  }
-
-  let mainIndex = 0;
-  for (let i = 1; i < outerRings.length; i++) {
-    if (outerRings[i].length > outerRings[mainIndex].length) mainIndex = i;
-  }
-  const mainArea = ringArea(outerRings[mainIndex]);
-
-  const others = outerRings
-    .map((ring, i) => ({ ring, i, area: ringArea(ring) }))
-    .filter((r) => r.i !== mainIndex && r.area >= mainArea * areaThresholdRatio)
+  const ranked = outerRings
+    .map((ring) => ({ ring, area: ringArea(ring) }))
     .sort((a, b) => b.area - a.area)
-    .slice(0, maxRings - 1);
+    .slice(0, maxRings);
+  const mainArea = ranked[0].area;
 
-  return [
-    simplifyRing(outerRings[mainIndex], epsilon, minPoints),
-    ...others.map((o) => simplifyRing(o.ring, epsilon * extraEpsilonMultiplier, Math.min(minPoints, extraMinPoints))),
-  ];
-}
-
-function extractPolygon(feature, epsilon = 0.5, minPoints = 20) {
-  return extractRings(feature, epsilon, minPoints)[0] || [];
-}
-
-/** Raw lon/lat bbox width of a ring, in degrees — used only to pick a per-feature epsilon. */
-function ringBBoxWidth(ring) {
-  let minX = Infinity, maxX = -Infinity;
-  for (const [x] of ring) {
-    minX = Math.min(minX, x);
-    maxX = Math.max(maxX, x);
-  }
-  return maxX - minX;
+  return ranked
+    .filter((r, i) => i === 0 || r.area >= mainArea * areaThresholdRatio)
+    .map((r) => densify(toStoredRing(r.ring, precision), minPoints, precision));
 }
 
 /**
- * Per-feature epsilon for context shapes (#18 restyle): `bboxWidth / divisor`,
- * clamped to `[minEps, maxEps]`. Large countries hit the `maxEps` ceiling
- * (same coarse detail as before — their scale hides it anyway); small/
- * medium countries (Syria, South Korea, the Balkans — exactly the ones that
- * looked visibly polygonal next to our playable targets) get proportionally
- * finer detail instead of one flat epsilon for the whole world.
+ * Builds one topojson topology for a WHOLE source category (all features —
+ * every playable target in it AND every other feature used as context),
+ * quantized then simplified ONCE, so any two features that share a border
+ * in the raw source end up sharing the exact same arc — structurally
+ * guaranteed, not just likely from matching epsilons (see #20's report:
+ * independently-digitized provinces/countries can have genuinely different
+ * vertices along a "shared" border even at a very fine, matched epsilon,
+ * which is exactly the Tekirdağ/İstanbul divergence that prompted this).
+ *
+ * `quantization` snaps coordinates to a grid before topology extraction so
+ * near-coincident (not just byte-identical) vertices from independently
+ * digitized neighbours also snap to a shared arc. `quantileP` is roughly
+ * "fraction of points kept" (0 = most aggressive, 1 = keep everything),
+ * tuned per category against real point counts/chunk sizes.
  */
-function adaptiveEpsilon(ring, { minEps, maxEps, divisor }) {
-  return Math.min(maxEps, Math.max(minEps, ringBBoxWidth(ring) / divisor));
+function buildCategoryTopology(geoFeatures, quantileP, quantization = 1e5) {
+  const fc = { type: 'FeatureCollection', features: geoFeatures };
+  const topo = topology({ features: fc }, quantization);
+  const presimplified = presimplify(topo);
+  const minWeight = quantile(presimplified, quantileP);
+  return simplify(presimplified, minWeight);
+}
+
+// Liang-Barsky clip of one line segment against an axis-aligned box.
+// Returns the clipped [start, end] pair, or null if the segment doesn't
+// intersect the box at all.
+function clipSegmentToBox([x0, y0], [x1, y1], box) {
+  let t0 = 0, t1 = 1;
+  const dx = x1 - x0, dy = y1 - y0;
+  const p = [-dx, dx, -dy, dy];
+  const q = [x0 - box.minX, box.maxX - x0, y0 - box.minY, box.maxY - y0];
+  for (let i = 0; i < 4; i++) {
+    if (p[i] === 0) {
+      if (q[i] < 0) return null;
+    } else {
+      const r = q[i] / p[i];
+      if (p[i] < 0) {
+        if (r > t1) return null;
+        if (r > t0) t0 = r;
+      } else {
+        if (r < t0) return null;
+        if (r < t1) t1 = r;
+      }
+    }
+  }
+  return [[x0 + t0 * dx, y0 + t0 * dy], [x0 + t1 * dx, y0 + t1 * dy]];
+}
+
+// Clips an OPEN polyline (not a closed ring — used for border mesh lines,
+// see buildCategoryBorders) to a box, walking segment-by-segment and
+// splitting into multiple sub-polylines wherever the line exits and
+// re-enters the box, rather than assuming a single contiguous run.
+function clipPolylineToBox(line, box) {
+  const segments = [];
+  let current = null;
+  for (let i = 0; i < line.length - 1; i++) {
+    const clipped = clipSegmentToBox(line[i], line[i + 1], box);
+    if (!clipped) {
+      if (current) { segments.push(current); current = null; }
+      continue;
+    }
+    if (!current) {
+      current = [clipped[0]];
+    } else {
+      const last = current[current.length - 1];
+      if (Math.hypot(last[0] - clipped[0][0], last[1] - clipped[0][1]) > 1e-9) {
+        segments.push(current);
+        current = [clipped[0]];
+      }
+    }
+    current.push(clipped[1]);
+  }
+  if (current) segments.push(current);
+  return segments;
 }
 
 function escapeQuotes(str) {
   return str.replace(/'/g, "\\'");
 }
 
-// Emits `export const <exportName> = [ ... ]` to `outFile`, matching each
-// metadata entry against `geoFeatures` by `geoName ?? nameEn` (or `?? name`
-// when neither is set, for pure-lookup-by-name sources), simplifying its
-// rings with `meta.epsilon ?? defaultEpsilon`. Logs a WARNING and skips any
-// entry it can't find — the caller should treat any such warning as a
-// blocker, not silently ship a missing region.
+/** Full lon/lat bbox of a ring (raw GeoJSON [lon, lat] OR stored [lon, -lat] — axis-agnostic). */
+export function ringBBoxOf(ring) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const [x, y] of ring) {
+    minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+    minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+  }
+  return { minX, minY, maxX, maxY };
+}
+
+// Sutherland-Hodgman clip against an arbitrary axis-aligned box, reusing
+// canvas-manager.js's clipPolygonToRect (which only clips against [0,0,w,h])
+// by shifting the ring into that box's own coordinate frame and back — one
+// clipping implementation for both on-screen (pixel) and lon/lat (degree)
+// rectangles, rather than a second copy of the same algorithm here.
+export function clipRingToBox(ring, box, precision = 4) {
+  const p = 10 ** precision;
+  const shifted = ring.map(([x, y]) => [x - box.minX, y - box.minY]);
+  const clipped = clipPolygonToRect(shifted, box.maxX - box.minX, box.maxY - box.minY);
+  return clipped.map(([x, y]) => [
+    Math.round((x + box.minX) * p) / p,
+    Math.round((y + box.minY) * p) / p,
+  ]);
+}
+
+// Caps the FINAL box's own width/height (after the 50% expansion below) at
+// a flat 50 degrees, centered on the expanded box. Every genuine target's
+// own bbox lands well under this even after expansion (a Canada/Brazil-sized
+// country's own bbox is itself around 40°, i.e. the pre-expansion figure —
+// the biggest legitimate targets), so this only engages for a target whose
+// OWN bbox is itself broken: see the France finding in #20's report —
+// pinned-country-paths.json's "france" ring splices in a French-Guiana
+// segment, giving it a raw ~64°x49° bbox that, even expanded, swallowed
+// half the Atlantic and pulled in West Africa/South America as "neighbours".
+// A per-side expansion cap alone can't distinguish that case from a
+// genuinely huge (but valid) target of similar raw size, so this clamps the
+// box's own total footprint directly instead.
+const MAX_BOX_SIZE_DEGREES = 50;
+
+function clampBoxSize(box) {
+  const clampAxis = (min, max) => {
+    const size = max - min;
+    if (size <= MAX_BOX_SIZE_DEGREES) return [min, max];
+    const center = (min + max) / 2;
+    return [center - MAX_BOX_SIZE_DEGREES / 2, center + MAX_BOX_SIZE_DEGREES / 2];
+  };
+  const [minX, maxX] = clampAxis(box.minX, box.maxX);
+  const [minY, maxY] = clampAxis(box.minY, box.maxY);
+  return { minX, maxX, minY, maxY };
+}
+
+// The context box must cover whatever the canvas fit (normalizeRingsToCanvasPoints
+// in canvas-manager.js — a "contain" fit centered on the main ring, see its
+// own doc comment) actually shows on screen, for ANY plausible canvas
+// aspect ratio — not just a flat expansion of the target's own bbox. That
+// fit's scale is set by whichever axis is more constraining, so a canvas
+// aspect ratio that DIFFERS from the target's own bbox aspect ratio always
+// reveals MORE than the target's own bbox on the other axis (e.g. a wide
+// desktop canvas showing a tall, narrow target reveals lots of extra width
+// beyond the target's own bbox). Sizing the box only from the target's own
+// aspect (the old flat 50%-each-side rule) leaves uncovered canvas at the
+// edges whenever a target's aspect diverges enough from the actual canvas
+// aspect — found in #20's report as visible white strips on Kırşehir (a
+// roughly-square province) viewed in a wide canvas.
 //
-// Multi-part regions (#18): every entry gets a `rings` array alongside the
-// existing `path` (`rings[0] === path`, always — scoring only ever reads
-// `path`, so it's untouched by any of this). A PINNED entry's `path` stays
-// completely frozen as before, but its OTHER rings (island chains etc.) are
-// still derived live from upstream — the pin only ever protected the single
-// path players are scored against, not the supplementary art. If the pinned
-// name can no longer be found upstream at all, it ships with `rings: [path]`
-// (no islands) rather than failing the build.
-function buildRegionModule({ metadata, geoFeatures, exportName, category, defaultEpsilon, matchName, outFile }) {
+// CONTEXT_ASPECT_MIN/MAX bracket the expected range of canvas aspect ratios
+// (width/height) — tallest a portrait phone's canvas plausibly gets (~1:1.5)
+// to widest a desktop canvas plausibly gets (~2.5:1). CONTEXT_SAFETY_MARGIN
+// adds a little extra beyond the mathematically-exact worst case to absorb
+// normalizeRingsToCanvasPoints' fixed-pixel `padding`, which this box
+// computation (working in projected units, with no pixel dimensions to
+// reference) can't account for exactly — padding eats proportionally more
+// of a small/mobile canvas, making the effective available-area aspect
+// ratio slightly more extreme than the raw canvas aspect.
+const CONTEXT_ASPECT_MIN = 1 / 1.5;
+const CONTEXT_ASPECT_MAX = 2.5;
+const CONTEXT_SAFETY_MARGIN = 1.15;
+
+// Inverse of projectMercatorPoint (canvas-manager.js) — recovers our stored
+// [lon, -lat] convention from a Web Mercator [x, y] pair. X is linear in
+// longitude (trivial to invert); Y needs the inverse Gudermannian.
+function unprojectMercatorPoint([x, y]) {
+  const lon = (x * 180) / Math.PI;
+  const lat = (2 * Math.atan(Math.exp(-y)) - Math.PI / 2) * (180 / Math.PI);
+  return [lon, -lat];
+}
+
+/**
+ * The lon/lat box a target's context is clipped to: sized to cover every
+ * canvas aspect ratio in [CONTEXT_ASPECT_MIN, CONTEXT_ASPECT_MAX] under the
+ * "contain" fit (see this function's own comment above), centered on the
+ * target's own bbox, then capped at MAX_BOX_SIZE_DEGREES overall (see
+ * above — guards against a corrupted/spliced target bbox, unrelated to the
+ * aspect-ratio sizing here).
+ *
+ * The aspect-ratio math runs in Web MERCATOR-PROJECTED space, not raw
+ * lon/lat degrees — normalizeRingsToCanvasPoints (canvas-manager.js) fits
+ * the PROJECTED ring to the canvas, and Mercator's Y axis stretches
+ * increasingly with latitude (a real finding: Kırşehir's raw lon/lat bbox
+ * has aspect ratio 1.33, but its actual PROJECTED aspect is 1.03 — using
+ * the raw-degree aspect under-sized the box and left visible white canvas
+ * strips at the edges, #20's report). Mercator is separable (X depends only
+ * on longitude, Y only on latitude), so the bbox corners can be projected
+ * directly without projecting every ring point.
+ *
+ * Exported standalone so its arithmetic is unit-testable without going
+ * through the full GeoJSON pipeline.
+ */
+export function computeContextBox(mainRingPath) {
+  const { minX, minY, maxX, maxY } = ringBBoxOf(mainRingPath);
+  const [px0, py0] = projectMercatorPoint([minX, minY]);
+  const [px1, py1] = projectMercatorPoint([maxX, maxY]);
+  const projMinX = Math.min(px0, px1), projMaxX = Math.max(px0, px1);
+  const projMinY = Math.min(py0, py1), projMaxY = Math.max(py0, py1);
+  const projW = (projMaxX - projMinX) || 1e-9;
+  const projH = (projMaxY - projMinY) || 1e-9;
+  const targetAspect = projW / projH;
+
+  // A canvas relatively WIDER than the target (aspect > targetAspect) shows
+  // extra width beyond the target's own bbox width; one relatively TALLER
+  // (aspect < targetAspect) shows extra height. Each factor is >1 only when
+  // the corresponding extreme of the aspect range actually exceeds the
+  // target's own aspect in that direction.
+  const widthFactor = Math.max(1, CONTEXT_ASPECT_MAX / targetAspect);
+  const heightFactor = Math.max(1, targetAspect / CONTEXT_ASPECT_MIN);
+
+  const visibleProjW = projW * widthFactor * CONTEXT_SAFETY_MARGIN;
+  const visibleProjH = projH * heightFactor * CONTEXT_SAFETY_MARGIN;
+  const pcx = (projMinX + projMaxX) / 2;
+  const pcy = (projMinY + projMaxY) / 2;
+
+  const [lonA, latA] = unprojectMercatorPoint([pcx - visibleProjW / 2, pcy - visibleProjH / 2]);
+  const [lonB, latB] = unprojectMercatorPoint([pcx + visibleProjW / 2, pcy + visibleProjH / 2]);
+
+  return clampBoxSize({
+    minX: Math.min(lonA, lonB), maxX: Math.max(lonA, lonB),
+    minY: Math.min(latA, latB), maxY: Math.max(latA, latB),
+  });
+}
+
+/**
+ * Per-region neighbour context. For one target region, returns every OTHER
+ * feature in the SAME source category that falls within the target's own
+ * bbox expanded by 50% on each side, clipped to that box. `simplifiedFeatures`
+ * all come from the ONE shared topology built for this whole category (see
+ * buildCategoryTopology) — the same topology the target's own `path`/`rings`
+ * were extracted from — so a border shared with the target (or with another
+ * context feature) is the exact same arc, vertex-for-vertex, not just a
+ * close match from independently matching epsilons.
+ *
+ * The target's own feature is excluded by name — it's drawn only from the
+ * target's own `rings`, never duplicated into its own context data.
+ *
+ * `mainRingPath` is the FINAL resolved path for this target (pinned-aware —
+ * the same value written into countries.js/etc.), so the context box always
+ * matches exactly what's actually rendered as the target.
+ */
+function buildRegionContext({
+  mainRingPath, targetName, simplifiedFeatures, getName, getIso2, precision = 4,
+}) {
+  const box = computeContextBox(mainRingPath);
+
+  const entries = [];
+  for (const feature of simplifiedFeatures) {
+    const name = getName(feature);
+    if (name === targetName) continue;
+
+    // Generous ring/area caps here (vs. extractRingsFromTopologyFeature's
+    // defaults for playable regions) — a coastal target like Greece needs
+    // its neighbour's own island chains to show up too, not just its
+    // mainland.
+    const rings = extractRingsFromTopologyFeature(feature, { maxRings: 20, areaThresholdRatio: 0.005, minPoints: 4, precision });
+
+    const clippedRings = rings
+      .map((ring) => clipRingToBox(ring, box, precision))
+      .filter((ring) => ring.length >= 3 && ringArea(ring) > 1e-6)
+      .sort((a, b) => ringArea(b) - ringArea(a));
+    if (clippedRings.length === 0) continue;
+
+    const iso2 = getIso2 ? getIso2(feature) : null;
+    clippedRings.forEach((ring, i) => {
+      // Only the largest visible piece of a feature gets labeled — avoids
+      // e.g. "Yunanistan" printed once per Greek island in view.
+      entries.push({ rings: [ring], name: i === 0 ? name : null, ...(iso2 ? { iso2 } : {}) });
+    });
+  }
+
+  return entries;
+}
+
+/**
+ * Precomputes the WHOLE category's shared-border mesh ONCE: every arc shared
+ * between two different features (a real country/province/state border).
+ * Using topojson-client's `mesh()` means each arc is walked exactly once
+ * regardless of how many features reference it.
+ *
+ * Coastline is deliberately NOT included here (see #20's budget follow-up):
+ * a coastline is by definition never shared between two features, so it
+ * carries no vertex-coincidence risk — it's drawn straight from each land
+ * polygon's own ring in context-renderer.js instead of shipping a second,
+ * separate copy of the same geometry as mesh data (which was measured to
+ * push several countries' chunks well past budget for zero coincidence
+ * benefit, since coastal rings were never going to share vertices anyway).
+ *
+ * IMPORTANT limitation, found and verified in #20's follow-up (the
+ * Tekirdağ/İstanbul report): `interior` only ever contains a border SEGMENT
+ * where the two sides' raw source vertices are already exactly (or, with
+ * quantization, near-exactly) coincident. Several of this project's
+ * sources digitize adjacent administrative boundaries INDEPENDENTLY rather
+ * than as one shared network — confirmed for multiple Turkish province
+ * pairs and at least one country pair (Turkey/Greece) — so a real border
+ * can be only PARTIALLY represented here, with the rest of its length
+ * genuinely absent from the topology as a shared arc. Given that,
+ * context-renderer.js draws this mesh on TOP of each context land polygon's
+ * own (potentially divergent) ring stroke, plus a land-colored buffer stroke
+ * under everything, so the residual, unrepresented part of a border reads as
+ * a small, visually-absorbed seam rather than two independently-digitized,
+ * visibly diverging lines.
+ * Returns a plain array of lines (arrays of points), in real (unquantized)
+ * lon/lat.
+ */
+function buildCategoryBorders(simplifiedTopology) {
+  const objects = simplifiedTopology.objects.features;
+  return topoMesh(simplifiedTopology, objects, (a, b) => a !== b).coordinates;
+}
+
+/**
+ * Clips a category's precomputed shared-border mesh (see
+ * buildCategoryBorders) to one target's context box, and drops empty
+ * results. `box` (see computeContextBox) is in our stored [lon, -lat]
+ * convention, so each raw (real lon/lat) mesh line is converted to that
+ * SAME convention first — clipping against a box before converting compares
+ * mismatched coordinate systems (a raw line's positive latitude against a
+ * box already negated), which silently drops nearly everything rather than
+ * erroring. Each category-wide line can split into several segments per
+ * target (clipPolylineToBox), or disappear entirely if it never enters the
+ * box.
+ */
+function clipCategoryBorders(categoryBorderLines, box, precision = 4) {
+  const p = 10 ** precision;
+  const round = (n) => Math.round(n * p) / p;
+  return categoryBorderLines
+    .map((line) => line.map(([x, y]) => [x, -y]))
+    .flatMap((line) => clipPolylineToBox(line, box))
+    .filter((seg) => seg.length >= 2)
+    .map((seg) => seg.map(([x, y]) => [round(x), round(y)]));
+}
+
+/** Mean of a ring's points, rounded — a cheap position proxy kept as
+ * lightweight METADATA (see buildRegionModule) so features that only need
+ * "roughly where is this region" (the Neighbor Chain's nearest-unplayed
+ * fallback) never have to load a region's full geometry chunk. */
+function computeCentroid(path) {
+  let sx = 0, sy = 0;
+  for (const [x, y] of path) { sx += x; sy += y; }
+  return {
+    x: Math.round((sx / path.length) * 1000) / 1000,
+    y: Math.round((sy / path.length) * 1000) / 1000,
+  };
+}
+
+// A pinned/generated country `path` spanning more than this many degrees of
+// longitude is almost certainly a spliced/corrupted ring (see the France,
+// Japan, Spain, Italy and Australia findings in #20's report — each had a
+// distant overseas territory or a separate island physically merged into
+// the mainland ring, most likely a defect from whenever these were first
+// pinned) rather than a real, valid landmass — flagged here so a future
+// pin update can't silently reintroduce the same class of bug.
+//
+// 60° was the original ask, but two REAL, correctly-shaped mainlands in our
+// own set already exceed it (Canada ~85°, China ~61°) — a flat 60° would
+// false-positive on both. 100° comfortably clears every legitimate country
+// we ship while still catching anything as extreme as the France bug (a
+// ~64° span from a French-Guiana splice) if a future re-pin reintroduces
+// something similar — not a perfect detector (a smaller, nearer-neighbour
+// splice like the old Japan/Hokkaido case doesn't blow the bbox this much),
+// but a reasonable regression tripwire for the worst class of the bug.
+const MAX_VALID_PATH_LONGITUDE_SPAN = 100;
+
+/**
+ * Re-derives every PINNED country's `path` from the current topology
+ * (mainland = largest real-area outer ring), compares it against the
+ * currently-frozen pin (bbox width/height + area, logged as a % delta —
+ * not gated on a threshold, since this regeneration is a deliberate,
+ * one-time re-baseline: every pinned country must come from the SAME
+ * topology as its neighbours for their shared borders to align), and
+ * OVERWRITES both the in-memory `PINNED_COUNTRY_PATHS` and
+ * pinned-country-paths.json with the new value. Subsequent runs go back to
+ * treating the (now-updated) pin as frozen, same mechanism as before — this
+ * just re-captures it once, from this generation's topology.
+ */
+function rePinCountries(metadata, simplifiedFeatures, matchName) {
+  function bboxArea(ring) {
+    const { minX, minY, maxX, maxY } = ringBBoxOf(ring);
+    return { w: maxX - minX, h: maxY - minY, area: ringArea(ring) };
+  }
+
+  for (const meta of metadata) {
+    if (!PINNED_COUNTRY_PATHS[meta.id]) continue;
+    const lookupName = matchName(meta);
+    const simplified = simplifiedFeatures.find((f) => f.properties.name === lookupName);
+    if (!simplified) {
+      console.warn(`WARNING: pinned country "${lookupName}" (${meta.id}) not found in the current topology — keeping its existing pin unchanged.`);
+      continue;
+    }
+    const [newMain] = extractRingsFromTopologyFeature(simplified, { maxRings: 1, minPoints: 20 });
+    if (!newMain) continue;
+
+    const old = bboxArea(PINNED_COUNTRY_PATHS[meta.id]);
+    const next = bboxArea(newMain);
+    const pctDelta = (a, b) => (a === 0 ? 0 : Math.abs(b - a) / a * 100);
+    console.log(
+      `Re-pinned ${meta.id}: bboxW ${old.w.toFixed(2)}->${next.w.toFixed(2)} (${pctDelta(old.w, next.w).toFixed(1)}%), `
+      + `bboxH ${old.h.toFixed(2)}->${next.h.toFixed(2)} (${pctDelta(old.h, next.h).toFixed(1)}%), `
+      + `area ${old.area.toFixed(2)}->${next.area.toFixed(2)} (${pctDelta(old.area, next.area).toFixed(1)}%)`
+    );
+    PINNED_COUNTRY_PATHS[meta.id] = newMain;
+  }
+  fs.writeFileSync(new URL('./pinned-country-paths.json', import.meta.url), `${JSON.stringify(PINNED_COUNTRY_PATHS)}\n`, 'utf-8');
+}
+
+// Emits `export const <exportName> = [ ... ]` to `outFile` — METADATA ONLY
+// (id, name, nameEn, difficulty, category, funFact, funFactEn, centroid),
+// no geometry — matching each metadata entry against `simplifiedFeatures`
+// (topology-simplified, see buildCategoryTopology) by `geoName ?? nameEn`
+// (or `?? name` when neither is set, for pure-lookup-by-name sources). Logs
+// a WARNING and skips any entry it can't find — the caller should treat any
+// such warning as a blocker, not silently ship a missing region.
+//
+// Geometry (the `path`/`rings` used to render/score a region) moves to its
+// own lazily-loaded chunk, `regionsOutDir/<id>.js`, exporting
+// `{ path, rings, context, borders }` — `context` is this region's
+// neighbour-context data (see buildRegionContext) and `borders` its clipped
+// slice of the category's shared-border mesh (see clipCategoryBorders, a
+// plain array of lines — coastline is drawn from each land ring directly,
+// not shipped as mesh data, see buildCategoryBorders), both merged into the
+// SAME chunk rather than separate ones, since a screen that needs one
+// always needs the others. `rings[0] === path`, always (multi-part regions,
+// #18) — scoring only ever reads `path`. A PINNED entry's `path` stays
+// completely frozen (see rePinCountries above), but its OTHER rings (island
+// chains etc.) are still derived live from the current topology.
+//
+// `precision` (decimal places for every emitted coordinate — path, rings,
+// context and borders alike, applied at this last step) is 4 for countries
+// and 5 for provinces/states (see generateData) — coarser 2-decimal
+// rounding was destroying real province-scale detail (#20's report).
+function buildRegionModule({
+  metadata, simplifiedFeatures, categoryBorders, exportName, category, matchName, outFile,
+  contextGetName, contextGetIso2, regionsOutDir, precision = 4,
+}) {
   let output = `export const ${exportName} = [\n`;
   let missing = 0;
+  const geometryStats = [];
 
   for (const meta of metadata) {
     const pinned = PINNED_COUNTRY_PATHS[meta.id];
     const lookupName = matchName(meta);
-    const feature = geoFeatures.find(f => f.properties.name === lookupName);
-    const epsilon = meta.epsilon ?? defaultEpsilon;
+    const simplified = simplifiedFeatures.find((f) => contextGetName(f) === lookupName);
+    // See PATH_PRECISION_OVERRIDES' own comment — canada is the only id that
+    // needs this; its own path/rings, not context/borders, are the cost.
+    const pathPrecision = PATH_PRECISION_OVERRIDES[meta.id] ?? precision;
 
     let path;
     let rings;
     if (pinned) {
       path = pinned;
-      if (feature) {
-        const liveRings = extractRings(feature, epsilon, 20);
+      if (simplified) {
+        const liveRings = extractRingsFromTopologyFeature(simplified, { minPoints: 20, precision: pathPrecision });
         rings = [path, ...liveRings.slice(1)];
       } else {
         console.warn(`WARNING: "${lookupName}" (${meta.id}) is pinned but no longer found upstream — shipping its main ring only, no extra islands.`);
         rings = [path];
       }
     } else {
-      if (!feature) {
-        console.warn(`WARNING: Could not find "${lookupName}" (${meta.id}) in GeoJSON!`);
+      if (!simplified) {
+        console.warn(`WARNING: Could not find "${lookupName}" (${meta.id}) in the source data!`);
         missing++;
         continue;
       }
-      rings = extractRings(feature, epsilon, 20);
+      rings = extractRingsFromTopologyFeature(simplified, { minPoints: 20, precision: pathPrecision });
+      if (rings.length === 0) {
+        console.warn(`WARNING: "${lookupName}" (${meta.id}) resolved to zero valid rings after topology extraction — skipping!`);
+        missing++;
+        continue;
+      }
       path = rings[0];
     }
 
+    const { minX, maxX } = ringBBoxOf(path);
+    if (maxX - minX > MAX_VALID_PATH_LONGITUDE_SPAN) {
+      console.warn(`WARNING: "${meta.id}"'s path spans ${(maxX - minX).toFixed(1)}° of longitude (> ${MAX_VALID_PATH_LONGITUDE_SPAN}°) — likely a spliced/corrupted ring, not a real landmass.`);
+    }
+
+    const centroid = computeCentroid(path);
     output += `  {
     id: '${meta.id}',
     name: '${meta.name}',
@@ -351,121 +717,236 @@ function buildRegionModule({ metadata, geoFeatures, exportName, category, defaul
     category: '${category}',
     funFact: '${escapeQuotes(meta.funFact)}',
     funFactEn: '${escapeQuotes(meta.funFactEn)}',
-    path: ${JSON.stringify(path)},
-    rings: ${JSON.stringify(rings)}
+    centroid: { x: ${centroid.x}, y: ${centroid.y} }
   },\n`;
+
+    // `path`/`rings` (the scored geometry) always stay at the category's
+    // full `precision` — CONTEXT_PRECISION_OVERRIDES only coarsens the
+    // decorative neighbour context + border mesh for a handful of ids whose
+    // context/borders alone would otherwise blow the geometry budget (see
+    // that map's own comment), never the region actually being scored.
+    const contextPrecision = CONTEXT_PRECISION_OVERRIDES[meta.id] ?? precision;
+    const context = buildRegionContext({
+      mainRingPath: path,
+      targetName: lookupName,
+      simplifiedFeatures,
+      getName: contextGetName,
+      getIso2: contextGetIso2,
+      precision: contextPrecision,
+    });
+    const borders = clipCategoryBorders(categoryBorders, computeContextBox(path), contextPrecision);
+
+    const geomOutFile = `${regionsOutDir}/${meta.id}.js`;
+    const geomContents = `export const geometry = ${JSON.stringify({ path, rings, context, borders })};\n`;
+    fs.writeFileSync(geomOutFile, geomContents, 'utf-8');
+    geometryStats.push({ id: meta.id, bytes: Buffer.byteLength(geomContents), gzipBytes: zlib.gzipSync(geomContents).length });
   }
   output += '];\n';
   fs.writeFileSync(outFile, output, 'utf-8');
   console.log(`Updated ${outFile} (${metadata.length - missing}/${metadata.length} regions)`);
-  return missing;
+  return { missing, geometryStats };
 }
 
-// Neighbour context (#18c) — a coarse, decorative background layer showing
-// every OTHER feature in a source's full dataset (not just the ones we ship
-// as playable regions), so trace mode/the result overlay can draw
-// "surrounding land" behind the target. Reuses the SAME already-fetched
-// GeoJSON as the playable regions (countries.geojson has ~255 countries;
-// the TR/US sources cover all 81 provinces / 50 states, not just our
-// smaller played subset) — no new network dependency. Heavily simplified
-// (a much coarser epsilon than playable geometry, main ring only, no
-// densify floor) since this is background dressing, never scored or
-// traced. Written as its own module so it can be dynamically `import()`-ed
-// as a separate chunk per category, only when a trace/result screen
-// actually needs it.
-// Each entry carries its main ring plus enough to LABEL it client-side
-// without shipping a translation table: `name` (the source's own English/
-// native admin name — provinces/states just use this as-is, per-language,
-// since TR province names are already Turkish and US state names stay
-// English either way) and, for countries only, `iso2` (ISO 3166-1 alpha-2)
-// so the renderer can localize via `Intl.DisplayNames`, falling back to
-// `name` if that lookup fails or `iso2` is missing.
-function buildContextModule({ geoFeatures, exportName, outFile, epsilonOpts, getName, getIso2 }) {
-  const entries = [];
-  for (const f of geoFeatures) {
-    let coords = f.geometry.coordinates;
-    if (f.geometry.type === 'MultiPolygon') {
-      let largest = coords[0];
-      for (const poly of coords) if (poly[0].length > largest[0].length) largest = poly;
-      coords = largest;
-    }
-    const outerRing = coords[0];
-    const epsilon = adaptiveEpsilon(outerRing, epsilonOpts);
-    const ring = simplifyRing(outerRing, epsilon, 4);
-    if (ring.length <= 2) continue;
-    entries.push({ rings: [ring], name: getName(f), ...(getIso2 ? { iso2: getIso2(f) } : {}) });
-  }
-  fs.writeFileSync(outFile, `export const ${exportName} = ${JSON.stringify(entries)};\n`, 'utf-8');
-  console.log(`Updated ${outFile} (${entries.length} context shapes)`);
-}
+// A handful of genuinely huge, complex-coastline countries (own mainland
+// ring in the thousands of points, even at a quantile tuned for everyone
+// else's detail) can't be trimmed further without either coarsening every
+// OTHER country's detail too (undoing the whole point of this pass) or
+// re-simplifying just their own ring after the fact — which would re-break
+// vertex-sharing with their real neighbours (Canada/USA, USA/Mexico,
+// Argentina/Chile) for exactly the reason this rewrite exists. Letting
+// these few, rarely-picked giants ship a larger (but still lazy,
+// per-region) chunk is the accepted trade-off instead. This list and the
+// ceiling below are both measured against real generator output, not
+// guessed — see the report.
+const LARGER_BUDGET_IDS = new Set(['canada', 'australia', 'usa', 'brazil', 'argentina', 'china', 'india', 'norway', 'sweden']);
+
+// Even at the raised LARGER_GEOMETRY_BUDGET_BYTES ceiling, china and india
+// still exceed it at 4-decimal context/border precision (#20 follow-up) —
+// both huge countries with many, large neighbours already on the exception
+// list above. Coarsening ONLY their (decorative) context + border mesh to
+// 3 decimals (~110m) brings them back under budget without touching their
+// own scored `path`/`rings`, which always stay at the full 4-decimal
+// precision regardless of this map. Does NOT help canada — see
+// PATH_PRECISION_OVERRIDES below, a separate mechanism for that case.
+const CONTEXT_PRECISION_OVERRIDES = { china: 3, india: 3 };
+
+// canada is the one id CONTEXT_PRECISION_OVERRIDES can't fix: its cost is
+// almost entirely its OWN path/rings (~116kB of its ~124kB total, from its
+// famously complex Arctic archipelago coastline — thousands of islands),
+// not context/borders. Coarsening ONLY its path/rings to 3 decimals (~110m,
+// imperceptible at the continental scale Canada is drawn/scored at) is the
+// #20-agreed fix. This does not affect border rendering/coincidence: the
+// shared Canada/USA border LINE always comes from `borders` (the category's
+// shared topology mesh, see buildCategoryBorders/clipCategoryBorders),
+// clipped and rounded per-region at that region's own `contextPrecision`
+// (unchanged, 4 decimals for both canada and usa — CONTEXT_PRECISION_OVERRIDES
+// doesn't list either) — this map only coarsens canada's own FILL/scored
+// ring, which the existing land-buffer-stroke mitigation already absorbs
+// against any residual gap versus the (unchanged, crisp) border mesh drawn
+// on top of it, same as it does for the coincidence-limited source pairs
+// documented in buildCategoryBorders' own comment.
+//
+// CAUTION if an id listed here is ever added to PINNED_COUNTRY_PATHS: the
+// pinned branch below splices the frozen `path` with LIVE `liveRings.slice(1)`
+// (island rings) — the frozen path's own precision (whatever it was pinned
+// at) would then silently coexist with this map's override applied only to
+// the live island rings, mixing precision within one `rings` array. Not
+// reachable today (canada isn't pinned) but worth a second look if that
+// ever changes.
+const PATH_PRECISION_OVERRIDES = { canada: 3 };
+
+// canada still doesn't clear LARGER_GEOMETRY_BUDGET_BYTES even at 3-decimal
+// path/rings (measured ~115-125kB depending on context-box sizing changes,
+// vs. the shared 105kB ceiling) — #20-agreed as a documented, one-off
+// exception rather than reducing precision further (2 decimals) or raising
+// the shared ceiling for every other "larger" id too. 110kB here (checked
+// against this script's own pre-Vite-build gzip measurement) corresponds to
+// ~120kB in the actual production build, per the ~9% Vite overhead noted on
+// GEOMETRY_BUDGET_BYTES/LARGER_GEOMETRY_BUDGET_BYTES above.
+const PER_ID_BUDGET_BYTES = { canada: 125 * 1024 };
 
 async function generateData() {
   let totalMissing = 0;
+  let allGeometryStats = [];
+  const regionsOutDir = 'src/data/regions';
+  // The real budget is checked against the BUILT chunk, but Vite's
+  // production bundling/minification consistently measures ~9% larger than
+  // gzipping this raw generated source directly (checked against
+  // usa/china/norway) — budgets checked here are scaled down so a pass here
+  // reliably means a pass there.
+  // Ceilings reflect the realism-first decision in #20: a player downloads
+  // only the one region they play, so ~65 kB (normal) / ~120 kB (largest
+  // coastlines) in the real build is acceptable rather than cutting detail.
+  const GEOMETRY_BUDGET_BYTES = 65 * 1024;
+  const LARGER_GEOMETRY_BUDGET_BYTES = 110 * 1024;
+
+  // #20 follow-up: geometry (path/rings/context/borders) all moved into one
+  // lazily-loaded chunk per region, replacing the older separate
+  // src/data/context/<id>.js chunks entirely — remove that whole directory
+  // so a stale copy can't linger and get imported by mistake.
+  const staleContextDir = 'src/data/context';
+  if (fs.existsSync(staleContextDir)) fs.rmSync(staleContextDir, { recursive: true });
+  fs.mkdirSync(regionsOutDir, { recursive: true });
 
   console.log('Fetching countries...');
   const geoCountries = await fetchJson(COUNTRIES_URL);
-  totalMissing += buildRegionModule({
+  // Quantile ("fraction of points kept") tuned against real point counts —
+  // 0.3 keeps Turkey/Greece near their old (pre-topology) Douglas-Peucker
+  // detail (~750-1500 points) and Cyprus clearly island-shaped (~54 points),
+  // while still bounding the biggest countries' point counts to something
+  // clip-to-box can reasonably work with (see LARGER_BUDGET_IDS above for
+  // the few that still need a bigger chunk regardless).
+  const countriesTopology = buildCategoryTopology(geoCountries.features, 0.3);
+  const countriesFeatures = topoFeature(countriesTopology, countriesTopology.objects.features).features;
+  const countryMatchName = (meta) => meta.geoName ?? meta.nameEn;
+  // Re-pinning overwrites pinned-country-paths.json with a fresh main ring
+  // derived from whatever the upstream source returns right now — a
+  // deliberate one-time re-baseline (see rePinCountries' doc comment), NOT
+  // something a routine regen (e.g. adding one new country) should trigger.
+  // Gated behind an explicit opt-in so `node scripts/generate_geo_data.js`
+  // leaves the frozen pins untouched by default.
+  if (process.env.REPIN_COUNTRIES) {
+    rePinCountries(COUNTRIES_METADATA, countriesFeatures, countryMatchName);
+  }
+  const countriesBorders = buildCategoryBorders(countriesTopology);
+  const countriesResult = buildRegionModule({
     metadata: COUNTRIES_METADATA,
-    geoFeatures: geoCountries.features,
+    simplifiedFeatures: countriesFeatures,
+    categoryBorders: countriesBorders,
     exportName: 'countries',
     category: 'country',
-    defaultEpsilon: 0.05,
-    matchName: (meta) => meta.geoName ?? meta.nameEn,
+    matchName: countryMatchName,
     outFile: 'src/data/countries.js',
-  });
-  buildContextModule({
-    geoFeatures: geoCountries.features,
-    exportName: 'countriesContext',
-    // minEps/maxEps/divisor tuned by hand against the actual gzip size of
-    // this chunk (see #18 restyle) — keeps small/mid countries noticeably
-    // more detailed than the old flat 0.3 while staying under ~45kB gzip.
-    epsilonOpts: { minEps: 0.18, maxEps: 0.3, divisor: 160 },
-    getName: (f) => f.properties.name,
-    getIso2: (f) => {
+    contextGetName: (f) => f.properties.name,
+    contextGetIso2: (f) => {
       const raw = f.properties['ISO3166-1-Alpha-2'];
       if (raw && raw !== '-99') return raw;
       return ISO2_OVERRIDES[f.properties.name] || null;
     },
-    outFile: 'src/data/context/countries-context.js',
+    regionsOutDir,
+    precision: 4,
   });
+  totalMissing += countriesResult.missing;
+  allGeometryStats = allGeometryStats.concat(countriesResult.geometryStats);
 
-  console.log('Fetching provinces...');
-  const geoProvinces = await fetchJson(TURKEY_PROVINCES_URL);
-  totalMissing += buildRegionModule({
-    metadata: PROVINCES_METADATA,
-    geoFeatures: geoProvinces.features,
-    exportName: 'turkeyProvinces',
-    category: 'province',
-    defaultEpsilon: 0.005,
-    matchName: (meta) => meta.geoName ?? meta.name,
-    outFile: 'src/data/turkey-provinces.js',
-  });
-  buildContextModule({
-    geoFeatures: geoProvinces.features,
-    exportName: 'provincesContext',
-    epsilonOpts: { minEps: 0.005, maxEps: 0.02, divisor: 50 },
-    getName: (f) => f.properties.name,
-    outFile: 'src/data/context/provinces-context.js',
-  });
+  console.log('Fetching provinces (geoBoundaries TUR ADM1, FULL variant)...');
+  // Try FULL first for maximum detail; its raw per-province point counts are
+  // enormous (Muğla ~49k) so the quantile below is far more aggressive than
+  // countries/states need, then fall back to the SIMPLIFIED release variant
+  // if even that still blows the (province-scale) geometry budget — checked
+  // against the province chunks alone, not the whole run's aggregate.
+  const buildProvinces = async (url, quantileP) => {
+    const geoProvinces = await fetchJson(url);
+    const provincesTopology = buildCategoryTopology(geoProvinces.features, quantileP);
+    const provincesFeatures = topoFeature(provincesTopology, provincesTopology.objects.features).features;
+    const provincesBorders = buildCategoryBorders(provincesTopology);
+    return buildRegionModule({
+      metadata: PROVINCES_METADATA,
+      simplifiedFeatures: provincesFeatures,
+      categoryBorders: provincesBorders,
+      exportName: 'turkeyProvinces',
+      category: 'province',
+      matchName: (meta) => meta.geoName ?? meta.name,
+      outFile: 'src/data/turkey-provinces.js',
+      // Provinces' context is other Turkish provinces only — a bordering
+      // country (e.g. Greece/Bulgaria near Edirne) is a real upstream source
+      // ADDED to the picture, not just clip/label plumbing; left out of this
+      // pass, called out explicitly in the report rather than folded in silently.
+      contextGetName: (f) => f.properties.shapeName,
+      regionsOutDir,
+      precision: 5,
+    });
+  };
+  let provincesResult = await buildProvinces(TURKEY_PROVINCES_URL_FULL, 0.05);
+  const maxProvinceChunk = Math.max(...provincesResult.geometryStats.map((s) => s.gzipBytes));
+  if (maxProvinceChunk > GEOMETRY_BUDGET_BYTES) {
+    console.log(`FULL variant's largest province chunk (${(maxProvinceChunk / 1024).toFixed(1)}kB) exceeds budget — falling back to the SIMPLIFIED release variant...`);
+    provincesResult = await buildProvinces(TURKEY_PROVINCES_URL_SIMPLIFIED, 0.3);
+  }
+  totalMissing += provincesResult.missing;
+  allGeometryStats = allGeometryStats.concat(provincesResult.geometryStats);
 
-  console.log('Fetching US states...');
-  const geoStates = await fetchJson(US_STATES_URL);
-  totalMissing += buildRegionModule({
+  console.log('Fetching US states (NE 10m admin-1)...');
+  const geoStatesRaw = await fetchJson(US_STATES_URL);
+  // The source is ALL admin-1 units worldwide — filter to the US before
+  // building a topology, both so context stays purely other US states and
+  // so we're not building a shared topology across ~4,600 world features.
+  const geoStates = { features: geoStatesRaw.features.filter((f) => f.properties.iso_a2 === 'US') };
+  const statesTopology = buildCategoryTopology(geoStates.features, 0.6);
+  const statesFeatures = topoFeature(statesTopology, statesTopology.objects.features).features;
+  const statesBorders = buildCategoryBorders(statesTopology);
+  const statesResult = buildRegionModule({
     metadata: US_STATES_METADATA,
-    geoFeatures: geoStates.features,
+    simplifiedFeatures: statesFeatures,
+    categoryBorders: statesBorders,
     exportName: 'usStates',
     category: 'state',
-    defaultEpsilon: 0.03,
     matchName: (meta) => meta.geoName ?? meta.nameEn,
     outFile: 'src/data/us-states.js',
+    contextGetName: (f) => f.properties.name,
+    regionsOutDir,
+    precision: 5,
   });
-  buildContextModule({
-    geoFeatures: geoStates.features,
-    exportName: 'statesContext',
-    epsilonOpts: { minEps: 0.02, maxEps: 0.1, divisor: 100 },
-    getName: (f) => f.properties.name,
-    outFile: 'src/data/context/states-context.js',
+  totalMissing += statesResult.missing;
+  allGeometryStats = allGeometryStats.concat(statesResult.geometryStats);
+
+  const sizes = allGeometryStats.map((s) => s.gzipBytes).sort((a, b) => a - b);
+  const total = sizes.reduce((a, b) => a + b, 0);
+  const median = sizes[Math.floor(sizes.length / 2)];
+  console.log(
+    `\nPer-region geometry chunks: ${sizes.length} — `
+    + `min ${(sizes[0] / 1024).toFixed(1)}kB, median ${(median / 1024).toFixed(1)}kB, `
+    + `max ${(sizes[sizes.length - 1] / 1024).toFixed(1)}kB gzip, total ${(total / 1024).toFixed(1)}kB gzip.`
+  );
+  const overBudget = allGeometryStats.filter((s) => {
+    const budget = PER_ID_BUDGET_BYTES[s.id]
+      ?? (LARGER_BUDGET_IDS.has(s.id) ? LARGER_GEOMETRY_BUDGET_BYTES : GEOMETRY_BUDGET_BYTES);
+    return s.gzipBytes > budget;
   });
+  if (overBudget.length > 0) {
+    console.error(`WARNING: over the geometry gzip budget: ${overBudget.map((s) => `${s.id} (${(s.gzipBytes / 1024).toFixed(1)}kB)`).join(', ')}`);
+    process.exitCode = 1;
+  }
 
   if (totalMissing > 0) {
     console.error(`\n${totalMissing} region(s) could not be matched in their source GeoJSON — see WARNINGs above.`);
@@ -473,4 +954,9 @@ async function generateData() {
   }
 }
 
-generateData().catch(console.error);
+// Only auto-run when executed directly (`node scripts/generate_geo_data.js`)
+// — guarded so tests can import individual pure functions above (e.g.
+// computeContextBox, clipRingToBox) without triggering a real network fetch.
+if (import.meta.url === `file://${process.argv[1]}`) {
+  generateData().catch(console.error);
+}
