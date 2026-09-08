@@ -302,14 +302,20 @@ class GeoDoodleApp {
   }
 
   /**
-   * Starts a fresh Neighbor Chain (#15): single player, a random level-1
-   * (easy) region as the starting link, in whichever mode the chain card's
-   * own toggle was set to. Reused by both the home screen card and the
-   * chain summary's "play again" button.
+   * Starts a fresh Neighbor Chain (#15): single player, in whichever mode
+   * the caller passes. Starts from `startRegionId` if given (#21: the
+   * result screen's "More" row passes the just-played region's next
+   * neighbour, via nextChainRegion, so the chain feels like a direct
+   * continuation) — otherwise a random level-1 (easy) region, the original
+   * behavior for the home screen card and the chain summary's "play again"
+   * button. `from` tags the `chain_start` event's entry point for GA4.
    */
-  startChain(mode) {
-    const easyLevel = levels.find((l) => l.id === 1);
-    const regionId = easyLevel.regions[Math.floor(Math.random() * easyLevel.regions.length)];
+  startChain(mode, { startRegionId, from } = {}) {
+    let regionId = startRegionId;
+    if (!regionId) {
+      const easyLevel = levels.find((l) => l.id === 1);
+      regionId = easyLevel.regions[Math.floor(Math.random() * easyLevel.regions.length)];
+    }
 
     const session = this.gameState.session;
     session.playerCount = 1;
@@ -317,7 +323,7 @@ class GeoDoodleApp {
     session.isDaily = false;
     session.chain = createChain(mode);
 
-    track('chain_start', { mode });
+    track('chain_start', { mode, from });
     this.startGame(regionId, mode);
   }
 

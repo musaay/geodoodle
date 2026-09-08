@@ -10,6 +10,7 @@ import { getDailyRegionPool, getDailyRegionIds, getDailyProgress, todayStr } fro
 import { normalizeRingsToCanvasPoints, visibleRingFraction } from '../engine/canvas-manager.js';
 import * as portalSdk from '../engine/portal-sdk.js';
 import { getContextCanvas, getTargetStyle } from '../engine/context-renderer.js';
+import { computeMoreRowState } from '../engine/result-more-row.js';
 
 /**
  * Shrink `text` (drawn in the given weight, starting at `baseSize`px) until
@@ -106,6 +107,23 @@ export class ResultScreen {
       const progress = getDailyProgress(entry, dailyRegionIds);
       this.dailyOutcome = { dailyRegionIds, progress };
     }
+
+    // "More" row (#21) — Neighbor Chain / Daily Triple entry points on a
+    // NORMAL round's result only (see computeMoreRowState's own doc
+    // comment for exactly when it's hidden). Today's Daily Triple progress
+    // is read independently of `this.dailyOutcome` above (which is only set
+    // while a daily ROUND itself is in progress) since the "More" row needs
+    // to know today's status even on an unrelated round's result.
+    const todaysDailyRegionIds = getDailyRegionIds(todayStr(), getDailyRegionPool(), 3);
+    const todaysDailyEntry = this.app.gameState.getDailyEntry(todayStr());
+    const todaysDailyProgress = getDailyProgress(todaysDailyEntry, todaysDailyRegionIds);
+    const moreRowState = computeMoreRowState({
+      isMultiplayer,
+      chainOutcome: this.chainOutcome,
+      dailyOutcome: this.dailyOutcome,
+      dailyProgress: todaysDailyProgress,
+      bestChain: this.app.gameState.getBestChain(),
+    });
 
     const modeText = session.isDaily ? t('mode_text_daily') : (mode === 'blind' ? t('mode_text_blind') : t('mode_text_trace'));
     const lang = getLanguage();
@@ -223,6 +241,30 @@ export class ResultScreen {
           </button>
         </div>
       </div>
+
+      ${moreRowState ? `
+      <div style="width: 100%; max-width: 460px; margin: 0 auto 1.5rem; text-align: center;">
+        <h4 style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-secondary); font-weight: 600; margin: 0 0 0.5rem;">${t('result_more_title')}</h4>
+        <div style="display: flex; gap: 0.6rem; flex-wrap: wrap; justify-content: center;">
+          <div class="card" data-action="more-chain" style="flex: 1 1 150px; max-width: 220px; cursor: pointer; padding: 0.65rem 0.85rem; text-align: left; display: flex; align-items: center; gap: 0.6rem;">
+            <i data-lucide="route" style="width: 1.3rem; height: 1.3rem; color: var(--accent-primary); flex-shrink: 0;"></i>
+            <div style="min-width: 0;">
+              <div style="font-size: 0.8rem; font-weight: 600; color: var(--text-primary);">${t('chain_title')}</div>
+              <div style="font-size: 0.7rem; color: var(--text-secondary); margin-top: 0.1rem;">${moreRowState.bestChain ? t('chain_best', { links: moreRowState.bestChain.links, total: moreRowState.bestChain.total }) : t('chain_desc')}</div>
+            </div>
+          </div>
+          ${moreRowState.showDaily ? `
+          <div class="card" data-action="more-daily" style="flex: 1 1 150px; max-width: 220px; cursor: pointer; padding: 0.65rem 0.85rem; text-align: left; display: flex; align-items: center; gap: 0.6rem;">
+            <i data-lucide="calendar" style="width: 1.3rem; height: 1.3rem; color: var(--accent-primary); flex-shrink: 0;"></i>
+            <div style="min-width: 0;">
+              <div style="font-size: 0.8rem; font-weight: 600; color: var(--text-primary);">${t('daily_title')}</div>
+              <div style="font-size: 0.7rem; color: var(--text-secondary); margin-top: 0.1rem;">${moreRowState.dailyStarted ? t('result_daily_progress', { played: moreRowState.dailyPlayedCount }) : t('result_daily_not_started')}</div>
+            </div>
+          </div>
+          ` : ''}
+        </div>
+      </div>
+      ` : ''}
     `;
 
     requestAnimationFrame(() => {
@@ -315,6 +357,32 @@ export class ResultScreen {
         : [{ score }];
       this.shareResult(region.id, regionName, rName, scoreEntries, score, session.isDaily);
     });
+
+    // "More" row (#21) — see computeMoreRowState/moreRowState above for when
+    // this exists at all.
+    if (moreRowState) {
+      el.querySelector('[data-action="more-chain"]').addEventListener('click', () => {
+        // Starts from the just-played region's next neighbour so the chain
+        // feels like a direct continuation, not an unrelated fresh start —
+        // startChain() itself falls back to a random easy region if this
+        // resolves to null (every region has either a real neighbour or a
+        // same-category centroid fallback, so that's only a theoretical
+        // edge case with the current 65-region set).
+        const regionsById = Object.fromEntries(getAllRegions().map((r) => [r.id, r]));
+        const nextRegionId = nextChainRegion(region.id, [region.id], regionsById);
+        this.cleanup();
+        this.app.startChain(mode, { startRegionId: nextRegionId, from: 'result' });
+      });
+
+      const dailyCard = el.querySelector('[data-action="more-daily"]');
+      if (dailyCard) {
+        dailyCard.addEventListener('click', () => {
+          track('daily_open', { progress: `${todaysDailyProgress.playedCount}/3`, from: 'result' });
+          this.cleanup();
+          this.app.enterDaily(todaysDailyProgress.nextRegionId);
+        });
+      }
+    }
 
     return el;
   }

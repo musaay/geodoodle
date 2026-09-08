@@ -160,7 +160,7 @@ export class HomeScreen {
           });
           return;
         }
-        track('daily_open', { progress: `${dailyProgress.playedCount}/3` });
+        track('daily_open', { progress: `${dailyProgress.playedCount}/3`, from: 'home' });
         this.app.enterDaily(dailyProgress.nextRegionId);
       });
     }
@@ -179,7 +179,7 @@ export class HomeScreen {
     });
     chainCard.addEventListener('click', () => {
       if (this.app.gameState.session.playerCount === 2) return;
-      this.app.startChain(this.app.gameState.getChainMode());
+      this.app.startChain(this.app.gameState.getChainMode(), { from: 'home' });
     });
 
     el.querySelector('[data-action="levels"]').addEventListener('click', () => {

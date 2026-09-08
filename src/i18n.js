@@ -95,6 +95,9 @@ const translations = {
     daily_hud: 'Günün 3\'lüsü: {played}/3 · Toplam {total}',
     daily_next: 'Sıradaki: {n}/3 →',
     daily_view_summary: 'Özeti gör →',
+    result_more_title: 'Daha Fazla',
+    result_daily_not_started: 'Bugün 3 bölge',
+    result_daily_progress: '{played}/3 tamamlandı',
     share_text_daily_triple: 'Günün 3\'lüsünde {total}/300 aldım — beni geçebilir misin?',
 
     // Stats Screen
@@ -237,6 +240,9 @@ const translations = {
     daily_next: 'Next: {n}/3 →',
     daily_view_summary: 'View summary →',
     share_text_daily_triple: 'I scored {total}/300 on today\'s Daily Triple — can you beat me?',
+    result_more_title: 'More',
+    result_daily_not_started: '3 regions today',
+    result_daily_progress: '{played}/3 done',
 
     // Stats Screen
     stats_total_drawings: 'Total Drawings',

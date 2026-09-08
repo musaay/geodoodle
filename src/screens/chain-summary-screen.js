@@ -78,7 +78,7 @@ export class ChainSummaryScreen {
     `;
 
     el.querySelector('[data-action="play-again"]').addEventListener('click', () => {
-      this.app.startChain(summary.mode);
+      this.app.startChain(summary.mode, { from: 'chain_summary' });
     });
 
     el.querySelector('[data-action="menu"]').addEventListener('click', () => {
