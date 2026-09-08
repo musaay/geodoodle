@@ -105,7 +105,15 @@ h1, h2, h3, h4, h5, h6 {
   display: flex;
   flex-direction: column;
   position: relative;
-  overflow: hidden;
+  /* No `overflow: hidden` here (removed — was clipping the page below the
+     ≥768px breakpoint, where .screen is no longer its own scroll container;
+     see that rule below). It traces back to this app's very first UI pass
+     and nothing actually depends on it: every overlay/decoration that needs
+     clipping owns it directly (.level-card, .onboarding-pen-hint), and
+     everything positioned relative to the viewport uses `position: fixed`
+     (.top-controls, .overlay, .confetti-canvas), which isn't affected by an
+     ancestor's overflow anyway. `overflow-x: hidden` on body (above) already
+     covers horizontal-scroll safety. */
 }
 
 /* 3. .screen */
