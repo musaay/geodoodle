@@ -7,6 +7,7 @@ import { playClick, playSubmit, playHint } from '../engine/audio-engine.js';
 import { track } from '../engine/analytics.js';
 import { getContextCanvas, getTargetStyle } from '../engine/context-renderer.js';
 import { loadRegionGeometry } from '../engine/region-geometry.js';
+import * as portalSdk from '../engine/portal-sdk.js';
 
 /**
  * GameScreen - Main drawing gameplay screen
@@ -136,8 +137,18 @@ export class GameScreen {
       this.region = { ...this.region, ...geometry };
 
       this.initCanvas(el, theme);
+      // #23: idempotent — a no-op here for the (common) case where
+      // main.js's own showHome()+loadingStop() already fired for a normal
+      // (non-deep-linked, non-instant-play) round; the real first call for
+      // a deep-linked/instant-play round.
+      portalSdk.loadingStop();
       if (!this.app.gameState.hasSeenOnboarding()) {
         this.showOnboarding(el);
+      } else {
+        // #23: onboarding already seen — the player can draw immediately,
+        // so gameplay starts right here. Otherwise it starts once
+        // dismissOnboarding() below is called.
+        portalSdk.gameplayStart();
       }
     });
 
@@ -417,6 +428,10 @@ export class GameScreen {
     if (backBtn) backBtn.classList.remove('onboarding-above-overlay');
 
     this.app.gameState.setOnboardingSeen();
+    // #23: the player can only actually start drawing once the overlay is
+    // gone — this is the gameplayStart() for a first-time player (see
+    // render()'s requestAnimationFrame callback for the already-seen case).
+    portalSdk.gameplayStart();
 
     if (this.pendingTimerEl) {
       this.startTimer(this.pendingTimerEl);
@@ -623,6 +638,11 @@ export class GameScreen {
   }
 
   cleanup() {
+    // #23: every way of leaving a round (back, submit, timer-expiry submit,
+    // navigating away entirely) routes through here — a single hook point,
+    // idempotent (a no-op if gameplay never started, e.g. Back pressed
+    // during onboarding).
+    portalSdk.gameplayStop();
     // #20 follow-up: invalidates any in-flight loadRegionGeometry() for the
     // round being abandoned — without this, a Back press before geometry
     // resolves (this.canvasManager/drawingEngine are still null at that

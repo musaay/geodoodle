@@ -41,6 +41,7 @@ import { ChainSummaryScreen } from './screens/chain-summary-screen.js';
 import { DailySummaryScreen } from './screens/daily-summary-screen.js';
 
 import { HandoffScreen } from './screens/handoff-screen.js';
+import * as portalSdk from './engine/portal-sdk.js';
 
 // Bundled Lucide (was unpkg CDN). Screens keep calling window.lucide.createIcons();
 // the shim always passes the bundled icon set along.
@@ -53,10 +54,20 @@ window.lucide = {
  */
 class GeoDoodleApp {
   constructor() {
+    // #23: as early as possible, before any geometry/data fetch — queued
+    // internally (a no-op outside the portal build) until init() resolves.
+    portalSdk.loadingStart();
+    // Starts in the background; never blocks first paint (see
+    // portal-sdk.js's own doc comment for the full init/queueing contract).
+    portalSdk.init();
+
     this.gameState = new GameState();
     this.appEl = document.getElementById('app');
     this.currentScreen = null;
     this.toastTimeout = null;
+    // #23: remembers a gameplay round paused by the tab going hidden, so it
+    // can resume on return — see the visibilitychange listener below.
+    this._resumeGameplayOnVisible = false;
 
     // Screen instances
     this.screens = {
@@ -76,15 +87,16 @@ class GeoDoodleApp {
     // Create top controls (theme & lang)
     this.createTopControls();
 
-    // Show home screen
-    this.showHome();
-
     // Register service worker
     this.registerSW();
 
     // `?region=<id>&mode=<trace|blind>` or `?daily=1` — sends a shared link
     // straight into the game it points to, instead of the home screen.
     // Deep links always take priority over the portal's instant-play below.
+    // Checked BEFORE rendering home (#23: so home is never rendered, however
+    // briefly, only to be immediately replaced — that would make
+    // loadingStop() below fire at the wrong "first screen interactive"
+    // moment; GameScreen.initCanvas() calls it instead for these paths).
     const deepLinked = this.handleDeepLink();
 
     // Portal (CrazyGames etc.) only: skip the home screen entirely and drop
@@ -95,10 +107,53 @@ class GeoDoodleApp {
       this.startInstantPlay();
     }
 
+    // Neither path above navigated anywhere — home is the actual first
+    // screen shown. `this.currentScreen` is only ever set by navigateTo(),
+    // so this reliably detects whether handleDeepLink()/startInstantPlay()
+    // already redirected, without threading an extra return value through
+    // either of them.
+    if (!this.currentScreen) {
+      this.showHome();
+      // #23: home renders synchronously (no geometry fetch) — this IS the
+      // "first screen interactive" moment. Idempotent (see portal-sdk.js):
+      // when a redirect above navigated to a game screen instead,
+      // GameScreen.initCanvas() calls loadingStop() there instead, and this
+      // call simply never fires.
+      portalSdk.loadingStop();
+    }
+
     // Install once, regardless of build target — reports uncaught errors
     // and unhandled promise rejections to GA4, deduped and capped so a loop
     // can't spam analytics.
     this.installErrorTracking();
+
+    // #23: portal gameplay-timer pause/resume on tab visibility.
+    this.installVisibilityHandling();
+  }
+
+  /**
+   * CrazyGames' gameplay timer should stop counting while the tab is
+   * hidden (backgrounded/minimized) and resume when it's visible again,
+   * ONLY if the player is still on the game screen — switching away to
+   * another app mid-round shouldn't count as active play, but leaving the
+   * hidden tab open past a Back/submit shouldn't spuriously restart it
+   * either. A no-op outside the portal build (isInGameplay() is always
+   * false there — see portal-sdk.js).
+   */
+  installVisibilityHandling() {
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        if (portalSdk.isInGameplay()) {
+          this._resumeGameplayOnVisible = true;
+          portalSdk.gameplayStop();
+        }
+      } else if (this._resumeGameplayOnVisible) {
+        this._resumeGameplayOnVisible = false;
+        if (this.currentScreen?.id === 'game-screen') {
+          portalSdk.gameplayStart();
+        }
+      }
+    });
   }
 
   /** Sends a startup deep link straight into the game it points to. Returns whether it did. */

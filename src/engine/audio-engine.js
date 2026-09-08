@@ -21,6 +21,14 @@ import { RANKS } from '../data/levels.js';
 let ctx = null;
 let unavailable = false;
 let soundEnabled = true;
+// Separate from `soundEnabled` (#23): the CrazyGames portal's own mute
+// toggle (SDK.game.settings.muteAudio) must silence audio without touching
+// the user's own persisted sound preference — so a player who muted via the
+// CG platform and then unmutes there gets their own in-game toggle back
+// exactly as they left it, rather than the two settings fighting over one
+// flag. `isSoundEnabled()` (read by the sound-toggle UI) intentionally
+// reflects only the user's own preference, never this gate.
+let externalMute = false;
 
 /** Mirror of GameState's persisted preference — kept in sync by GameState
  *  so every play*() can cheaply bail out without touching AudioContext. */
@@ -30,6 +38,15 @@ export function setSoundEnabled(enabled) {
 
 export function isSoundEnabled() {
   return soundEnabled;
+}
+
+/** Portal SDK mute gate (#23) — see the comment on `externalMute` above. */
+export function setExternalMute(muted) {
+  externalMute = !!muted;
+}
+
+function isAudible() {
+  return soundEnabled && !externalMute;
 }
 
 function getContext() {
@@ -102,31 +119,31 @@ export function isHighRank(rank) {
 
 /** Soft tick on pointerdown, when a stroke begins. */
 export function playStrokeStart() {
-  if (!soundEnabled) return;
+  if (!isAudible()) return;
   playTone({ freq: 520, duration: 0.04, type: 'sine', gain: 0.15 });
 }
 
 /** Neutral click for buttons: hint button, mode/tool buttons, etc. */
 export function playClick() {
-  if (!soundEnabled) return;
+  if (!isAudible()) return;
   playTone({ freq: 660, duration: 0.035, type: 'triangle', gain: 0.18 });
 }
 
 /** Small rising blip when a hint is used. */
 export function playHint() {
-  if (!soundEnabled) return;
+  if (!isAudible()) return;
   playTone({ freq: 440, sweepTo: 880, duration: 0.06, type: 'sine', gain: 0.2 });
 }
 
 /** Clear confirm sound for the Submit action. */
 export function playSubmit() {
-  if (!soundEnabled) return;
+  if (!isAudible()) return;
   playTone({ freq: 500, sweepTo: 760, duration: 0.16, type: 'sine', gain: 0.25 });
 }
 
 /** Short repeated tick — for a score count-up animation to call once per step. */
 export function playTick() {
-  if (!soundEnabled) return;
+  if (!isAudible()) return;
   playTone({ freq: 900, duration: 0.02, type: 'square', gain: 0.12 });
 }
 
@@ -144,7 +161,7 @@ function playFanfare(audioCtx) {
  * playTick() itself).
  */
 export function playResult(rank) {
-  if (!soundEnabled) return;
+  if (!isAudible()) return;
   const audioCtx = getContext();
   if (!audioCtx) return;
   if (isHighRank(rank)) {

@@ -1,6 +1,7 @@
 import { t, getLanguage, localeUpperCase } from '../i18n.js';
 import { getRegionById } from '../data/levels.js';
 import { track } from '../engine/analytics.js';
+import * as portalSdk from '../engine/portal-sdk.js';
 
 /**
  * ChainSummaryScreen — end-of-run recap for Neighbor Chain mode (#15).
@@ -16,6 +17,10 @@ export class ChainSummaryScreen {
 
   render(summary) {
     this.summary = summary;
+    // #23: run completion is its own "achievement" moment, independent of
+    // any single round's rank — called once per render (this screen is only
+    // ever rendered when a chain actually ends).
+    portalSdk.happytime();
     const el = document.createElement('div');
     el.className = 'screen scroll-container';
     el.id = 'chain-summary-screen';

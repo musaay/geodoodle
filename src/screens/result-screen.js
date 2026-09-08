@@ -8,6 +8,7 @@ import { nextChainRegion } from '../data/neighbors.js';
 import { applyChainLink, shouldEndChain } from '../engine/chain-engine.js';
 import { getDailyRegionPool, getDailyRegionIds, getDailyProgress, todayStr } from '../engine/daily.js';
 import { normalizeRingsToCanvasPoints, visibleRingFraction } from '../engine/canvas-manager.js';
+import * as portalSdk from '../engine/portal-sdk.js';
 import { getContextCanvas, getTargetStyle } from '../engine/context-renderer.js';
 
 /**
@@ -363,7 +364,10 @@ export class ResultScreen {
     const onAllDone = () => {
       revealResultLabel();
       playResult(finishRank);
-      if (isHighRank(finishRank)) this.launchConfetti();
+      if (isHighRank(finishRank)) {
+        this.launchConfetti();
+        portalSdk.happytime(); // #23: sparingly — top-2-rank moment only
+      }
     };
 
     if (prefersReducedMotion) {
@@ -377,7 +381,10 @@ export class ResultScreen {
       }
       revealResultLabel();
       playResult(finishRank);
-      // No confetti under reduced motion, even for a top-2 rank.
+      // No confetti under reduced motion, even for a top-2 rank — but #23's
+      // happytime() is independent of the confetti animation, so it still
+      // fires here.
+      if (isHighRank(finishRank)) portalSdk.happytime();
       return;
     }
 

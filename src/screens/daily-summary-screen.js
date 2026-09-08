@@ -1,6 +1,7 @@
 import { t, getLanguage, localeUpperCase } from '../i18n.js';
 import { getRegionById } from '../data/levels.js';
 import { track } from '../engine/analytics.js';
+import * as portalSdk from '../engine/portal-sdk.js';
 
 /**
  * DailySummaryScreen — end-of-set recap for the Daily Triple (#17).
@@ -15,6 +16,10 @@ export class DailySummaryScreen {
 
   render(summary) {
     this.summary = summary;
+    // #23: set completion is its own "achievement" moment, independent of
+    // any single region's rank — called once per render (this screen is
+    // only ever rendered when the daily set is actually complete).
+    portalSdk.happytime();
     const el = document.createElement('div');
     el.className = 'screen scroll-container';
     el.id = 'daily-summary-screen';
