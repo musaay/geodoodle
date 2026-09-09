@@ -117,6 +117,46 @@ describe('GameState chain mode (#15)', () => {
   });
 });
 
+describe('GameState brush size (#24)', () => {
+  beforeEach(() => {
+    globalThis.localStorage.clear();
+  });
+
+  it('defaults to medium', () => {
+    const state = new GameState();
+    expect(state.getBrushSize()).toBe('medium');
+  });
+
+  it('persists a chosen size across reloads', () => {
+    const state = new GameState();
+    state.setBrushSize('thin');
+    expect(state.getBrushSize()).toBe('thin');
+
+    const reloaded = new GameState();
+    expect(reloaded.getBrushSize()).toBe('thin');
+  });
+
+  it('ignores an invalid size', () => {
+    const state = new GameState();
+    state.setBrushSize('thick');
+    state.setBrushSize('not-a-size');
+    expect(state.getBrushSize()).toBe('thick');
+  });
+
+  it('loads an old saved state without the key as medium', () => {
+    globalThis.localStorage.setItem('geodoodle_state', JSON.stringify({ theme: 'night' }));
+    const state = new GameState();
+    expect(state.getBrushSize()).toBe('medium');
+  });
+
+  it('is reset to medium by resetAll', () => {
+    const state = new GameState();
+    state.setBrushSize('thick');
+    state.resetAll();
+    expect(state.getBrushSize()).toBe('medium');
+  });
+});
+
 describe('GameState Daily Triple (#17)', () => {
   beforeEach(() => {
     globalThis.localStorage.clear();

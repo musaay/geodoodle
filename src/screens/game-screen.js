@@ -9,6 +9,9 @@ import { getContextCanvas, getTargetStyle } from '../engine/context-renderer.js'
 import { loadRegionGeometry } from '../engine/region-geometry.js';
 import * as portalSdk from '../engine/portal-sdk.js';
 
+// Brush size names (persisted on GameState, #24) to the DrawingEngine lineWidth they map to.
+const BRUSH_WIDTHS = { thin: 2, medium: 3, thick: 6 };
+
 /**
  * GameScreen - Main drawing gameplay screen
  * Supports trace mode (with silhouette) and blind mode (from memory)
@@ -70,6 +73,7 @@ export class GameScreen {
     const isEnglishName = lang === 'en' && !!this.region.nameEn;
     const rName = isEnglishName ? this.region.nameEn : this.region.name;
     const regionName = localeUpperCase(rName, isEnglishName);
+    const savedBrush = this.app.gameState.getBrushSize();
 
     el.innerHTML = `
       <div style="position: relative; width: 100%; max-width: 100vw; margin: 0 auto; display: flex; flex-direction: column;">
@@ -95,15 +99,15 @@ export class GameScreen {
       </div>
       <div class="canvas-container" id="drawing-canvas"></div>
       <div class="toolbar">
-        <button class="toolbar-btn" data-action="brush-thin" title="${t('tool_thin_title')}">
+        <button class="toolbar-btn${savedBrush === 'thin' ? ' active' : ''}" data-action="brush-thin" title="${t('tool_thin_title')}">
           <i data-lucide="pen-tool"></i>
           <span>${t('tool_thin')}</span>
         </button>
-        <button class="toolbar-btn active" data-action="brush-medium" title="${t('tool_medium_title')}">
+        <button class="toolbar-btn${savedBrush === 'medium' ? ' active' : ''}" data-action="brush-medium" title="${t('tool_medium_title')}">
           <i data-lucide="pen"></i>
           <span>${t('tool_medium')}</span>
         </button>
-        <button class="toolbar-btn" data-action="brush-thick" title="${t('tool_thick_title')}">
+        <button class="toolbar-btn${savedBrush === 'thick' ? ' active' : ''}" data-action="brush-thick" title="${t('tool_thick_title')}">
           <i data-lucide="paintbrush"></i>
           <span>${t('tool_thick')}</span>
         </button>
@@ -175,7 +179,7 @@ export class GameScreen {
     this.drawingEngine = new DrawingEngine(this.canvasManager, {
       theme,
       color: theme === 'night' ? '#00f5d4' : '#3d2b1f',
-      lineWidth: 3,
+      lineWidth: BRUSH_WIDTHS[this.app.gameState.getBrushSize()] || BRUSH_WIDTHS.medium,
       // First stroke of the round: a subtle one-shot glow so it's obvious
       // the canvas is drawable.
       onFirstStroke: () => {
@@ -299,18 +303,13 @@ export class GameScreen {
     });
 
     // Brush sizes
-    const brushActions = {
-      'brush-thin': 2,
-      'brush-medium': 3,
-      'brush-thick': 6,
-    };
-
-    for (const [action, size] of Object.entries(brushActions)) {
-      el.querySelector(`[data-action="${action}"]`).addEventListener('click', (e) => {
+    for (const [name, size] of Object.entries(BRUSH_WIDTHS)) {
+      el.querySelector(`[data-action="brush-${name}"]`).addEventListener('click', (e) => {
         if (!this.drawingEngine) return;
         playClick();
         this.drawingEngine.setBrushSize(size);
         this.drawingEngine.setEraser(false);
+        this.app.gameState.setBrushSize(name);
         el.querySelectorAll('.toolbar-btn').forEach(b => b.classList.remove('active'));
         e.currentTarget.classList.add('active');
       });

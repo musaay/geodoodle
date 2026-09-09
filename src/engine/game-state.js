@@ -24,7 +24,10 @@ const DEFAULT_STATE = {
   daily: {},
   bestChain: null, // { links, total, date } — best-ever Neighbor Chain run (#15)
   chainMode: 'trace', // last mode chosen on the Neighbor Chain home card (#15)
+  brushSize: 'medium', // last brush chosen on the game screen toolbar (#24) — eraser is a tool, not a brush, and is never persisted
 };
+
+const BRUSH_SIZES = ['thin', 'medium', 'thick'];
 
 /**
  * A fresh copy of DEFAULT_STATE with its own nested containers. Plain
@@ -260,6 +263,17 @@ export class GameState {
   setChainMode(mode) {
     if (mode !== 'trace' && mode !== 'blind') return;
     this.state.chainMode = mode;
+    this.save();
+  }
+
+  // Brush size (#24) — persisted so it doesn't reset to medium every round
+  getBrushSize() {
+    return this.state.brushSize || 'medium';
+  }
+
+  setBrushSize(size) {
+    if (!BRUSH_SIZES.includes(size)) return;
+    this.state.brushSize = size;
     this.save();
   }
 
