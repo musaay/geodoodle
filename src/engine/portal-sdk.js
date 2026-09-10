@@ -1,12 +1,24 @@
 import { setExternalMute } from './audio-engine.js';
 
 /**
- * CrazyGames SDK v3 wrapper (#23) — DISCOVERY NOTES, fetched from
- * docs.crazygames.com on 2026-09-08 (the docs site's paths had moved since
- * an earlier pass, so these are re-verified against the current site):
+ * Platform-agnostic portal SDK facade. Exposes one small API (init,
+ * loadingStart/Stop, gameplayStart/Stop, isInGameplay, happytime) shared by
+ * two adapters — CrazyGames (#23) and Yandex Games (#25) — behind a single
+ * queue-before-init / idempotent-gameplay state machine. The target adapter
+ * is picked via `isYandexTarget()` below, itself reading
+ * `import.meta.env.VITE_PORTAL_TARGET` — a build-time constant Vite inlines
+ * the same way it inlines VITE_PORTAL (see `isPortalBuild()`), so
+ * Rollup/esbuild's minifier can fold the per-call `if (isYandexTarget())`
+ * branches to a constant and dead-code-eliminate the adapter not built for
+ * a given target.
  *
- * Script tag (portal build only — injected by vite.config.js's
- * transformIndexHtml, keyed on VITE_PORTAL, never present in the web build):
+ * === CrazyGames SDK v3 — DISCOVERY NOTES, fetched from
+ * docs.crazygames.com on 2026-09-08 (#23; the docs site's paths had moved
+ * since an earlier pass, so these are re-verified against the current site):
+ *
+ * Script tag (crazygames target only — injected by vite.config.js's
+ * transformIndexHtml, keyed on VITE_PORTAL + VITE_PORTAL_TARGET, never
+ * present in the web build or the yandex target):
  *   <script src="https://sdk.crazygames.com/crazygames-sdk-v3.js"></script>
  *
  * Init — async, and the SDK is documented as "unusable until initialized":
@@ -46,18 +58,60 @@ import { setExternalMute } from './audio-engine.js';
  * turns on SDK console logging automatically, which is what the smoke test
  * below reads to confirm event ordering.
  *
+ * === Yandex Games SDK — DISCOVERY NOTES, fetched from
+ * yandex.com/dev/games/doc/en/sdk/{sdk-about,sdk-game-events} on 2026-09-10:
+ *
+ * Script tag (yandex target only — injected by vite.config.js; a RELATIVE
+ * path, since the built package.zip is uploaded to Yandex's own server,
+ * which serves the SDK from that path on its own domain):
+ *   <script src="/sdk.js"></script>
+ * The docs are explicit that this script must finish loading before
+ * YaGames.init() is called, or it throws a ReferenceError — vite.config.js
+ * injects it as a plain synchronous <head> tag (ahead of our own bundle) so
+ * load order is guaranteed without needing async/onload handling here.
+ *
+ * Init — async, and (unlike CrazyGames's window.CrazyGames.SDK namespace)
+ * resolves to the SDK instance itself, which must be kept around:
+ *   const ysdk = await YaGames.init();
+ * No documented "environment" concept (no crazygames/local/disabled
+ * equivalent) — once init() resolves, ysdk is assumed fully usable. The only
+ * broken states this wrapper handles are init() rejecting, or
+ * window.YaGames missing entirely (ad-blocker, network failure, or simply
+ * not running on Yandex Games).
+ *
+ * ysdk.features.LoadingAPI.ready() — call "when the game has loaded all
+ * resources and is ready to interact with the user". Mapped to this
+ * wrapper's loadingStop(); Yandex has no separate "loading start" signal, so
+ * loadingStart() is a no-op on this target.
+ *
+ * ysdk.features.GameplayAPI.start() / .stop() — "the gameplay is
+ * immediately started/stopped" — call start() on level start/menu
+ * close/unpause/resume-after-ad/tab-refocus, stop() on level end/menu
+ * open/pause/ad-shown/tab-blur. Same shape as CrazyGames's
+ * gameplayStart/Stop, mapped 1:1 onto this wrapper's existing calls.
+ *
+ * No ad calls in this issue (#25) — LoadingAPI/GameplayAPI only.
+ *
+ * happytime(): no Yandex equivalent found in either doc page — no-op.
+ *
+ * Settings/mute: no documented mute-forwarding API in either doc page — the
+ * external-mute sync below (applySettings/addSettingsChangeListener) is
+ * CrazyGames-only; the Yandex adapter never calls setExternalMute().
+ *
  * Design decisions beyond what's documented (there's no documented queueing
- * or dead-code-elimination behavior — both are choices made here):
+ * or dead-code-elimination behavior — both are choices made here, shared by
+ * both adapters):
  *   - `init()` runs in the background and never throws or blocks first
  *     paint. Every other export called before it resolves is QUEUED (not
  *     dropped) and flushed in call order once init() settles successfully —
  *     `loadingStart()` is called as early as possible in main.js specifically
  *     so it's always the first thing in that queue.
- *   - If init() rejects, `window.CrazyGames` is missing entirely (ad-blocker,
- *     network failure, or simply not running on CrazyGames), or
- *     `SDK.environment === 'disabled'` once init DOES resolve, every export
- *     becomes a permanent no-op and the queue is dropped rather than
- *     flushed — flushing into a broken/disabled SDK is exactly what throws.
+ *   - If init() rejects, the platform's global SDK object is missing
+ *     entirely (ad-blocker, network failure, or simply not running on that
+ *     platform), or (CrazyGames only) `SDK.environment === 'disabled'` once
+ *     init DOES resolve, every export becomes a permanent no-op and the
+ *     queue is dropped rather than flushed — flushing into a broken/disabled
+ *     SDK is exactly what throws.
  *   - Every export is ALSO a no-op unless `import.meta.env.VITE_PORTAL ===
  *     '1'` — checked first, in every export, so Vite's static replacement
  *     of that env var lets Rollup/Terser fold the branch away in the web
@@ -73,11 +127,16 @@ function isPortalBuild() {
   return import.meta.env.VITE_PORTAL === '1';
 }
 
-let sdkReady = false; // init() resolved AND environment is usable
+function isYandexTarget() {
+  return import.meta.env.VITE_PORTAL_TARGET === 'yandex';
+}
+
+let sdkReady = false; // init() resolved AND (CrazyGames only) environment is usable
 let sdkBroken = false; // init() failed, SDK missing, or environment disabled — never usable
 let queue = [];
 let inGameplay = false;
 let loadingStopped = false;
+let ysdk = null; // the resolved Yandex SDK instance (yandex target only)
 
 function flushQueue() {
   const pending = queue;
@@ -114,6 +173,24 @@ export function init() {
   if (!isPortalBuild()) return;
   if (sdkReady || sdkBroken) return;
 
+  if (isYandexTarget()) {
+    const YaGames = typeof window !== 'undefined' ? window.YaGames : undefined;
+    if (!YaGames?.init) {
+      markBroken();
+      return;
+    }
+    Promise.resolve(YaGames.init())
+      .then((resolvedSdk) => {
+        ysdk = resolvedSdk;
+        sdkReady = true;
+        flushQueue();
+      })
+      .catch(() => {
+        markBroken();
+      });
+    return;
+  }
+
   const CG = typeof window !== 'undefined' ? window.CrazyGames : undefined;
   if (!CG?.SDK?.init) {
     markBroken();
@@ -143,6 +220,7 @@ export function init() {
 /** Call as early as possible (main.js, before geometry/data fetches). */
 export function loadingStart() {
   if (!isPortalBuild()) return;
+  if (isYandexTarget()) return; // no "loading start" signal on this target — only ready()
   callOrQueue(() => window.CrazyGames.SDK.game.loadingStart());
 }
 
@@ -150,15 +228,23 @@ export function loadingStart() {
 export function loadingStop() {
   if (!isPortalBuild() || loadingStopped) return;
   loadingStopped = true;
+  if (isYandexTarget()) {
+    callOrQueue(() => ysdk.features.LoadingAPI.ready());
+    return;
+  }
   callOrQueue(() => window.CrazyGames.SDK.game.loadingStop());
 }
 
 export function gameplayStart() {
   // sdkBroken is checked here too (not just inside callOrQueue) so
   // isInGameplay() never reports true for a round the SDK will never
-  // actually hear about — e.g. window.CrazyGames missing entirely.
+  // actually hear about — e.g. the platform's global SDK object missing entirely.
   if (!isPortalBuild() || sdkBroken || inGameplay) return;
   inGameplay = true;
+  if (isYandexTarget()) {
+    callOrQueue(() => ysdk.features.GameplayAPI.start());
+    return;
+  }
   callOrQueue(() => window.CrazyGames.SDK.game.gameplayStart());
 }
 
@@ -172,6 +258,10 @@ export function gameplayStop() {
   // reporting an unmatched start forever (code-reviewer finding, #23).
   inGameplay = false;
   if (sdkBroken) return;
+  if (isYandexTarget()) {
+    callOrQueue(() => ysdk.features.GameplayAPI.stop());
+    return;
+  }
   callOrQueue(() => window.CrazyGames.SDK.game.gameplayStop());
 }
 
@@ -180,9 +270,10 @@ export function isInGameplay() {
   return inGameplay;
 }
 
-/** Use sparingly — top-2-rank result reveal, chain/daily summary completion. */
+/** Use sparingly — top-2-rank result reveal, chain/daily summary completion. No Yandex equivalent — no-op on that target. */
 export function happytime() {
   if (!isPortalBuild()) return;
+  if (isYandexTarget()) return;
   callOrQueue(() => window.CrazyGames.SDK.game.happytime());
 }
 
@@ -193,4 +284,5 @@ export function __resetForTest() {
   queue = [];
   inGameplay = false;
   loadingStopped = false;
+  ysdk = null;
 }

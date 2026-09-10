@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build && node scripts/generate_seo_pages.js",
     "build:portal": "VITE_PORTAL=1 vite build --base ./ --outDir dist-portal",
+    "build:yandex": "VITE_PORTAL=1 VITE_PORTAL_TARGET=yandex vite build --base ./ --outDir dist-yandex",
     "preview": "vite preview",
     "test": "vitest run"
   },

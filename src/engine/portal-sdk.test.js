@@ -235,3 +235,196 @@ describe('portal-sdk wrapper', () => {
     expect(spy).toHaveBeenCalledWith(false);
   });
 });
+
+/**
+ * DOM-free tests for the Yandex Games adapter (#25) — mirrors the CrazyGames
+ * suite above (same shared queue/gameplay state machine), stubbing
+ * `window.YaGames` and `VITE_PORTAL_TARGET=yandex` instead.
+ */
+describe('portal-sdk wrapper — Yandex adapter', () => {
+  const originalYaGames = globalThis.window?.YaGames;
+
+  beforeEach(() => {
+    globalThis.window = globalThis.window || {};
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    if (originalYaGames) globalThis.window.YaGames = originalYaGames;
+    else delete globalThis.window?.YaGames;
+  });
+
+  it('defaults to the CrazyGames adapter when VITE_PORTAL_TARGET is unset, even with YaGames present', async () => {
+    vi.stubEnv('VITE_PORTAL', '1');
+    vi.stubEnv('VITE_PORTAL_TARGET', undefined);
+    const yaCalls = [];
+    globalThis.window.YaGames = {
+      init: () => Promise.resolve({
+        features: {
+          LoadingAPI: { ready: () => yaCalls.push('ready') },
+          GameplayAPI: { start: () => yaCalls.push('start'), stop: () => yaCalls.push('stop') },
+        },
+      }),
+    };
+    delete globalThis.window.CrazyGames; // CG missing entirely -> broken if the CG branch is (correctly) chosen
+    const sdk = await freshModule();
+    sdk.init();
+    sdk.loadingStop();
+    await Promise.resolve();
+    await Promise.resolve();
+    // The CrazyGames branch was taken (and immediately marked broken, since
+    // window.CrazyGames is missing) — the Yandex SDK was never touched.
+    expect(yaCalls).toEqual([]);
+  });
+
+  it('is a silent no-op when window.YaGames is missing entirely', async () => {
+    vi.stubEnv('VITE_PORTAL', '1');
+    vi.stubEnv('VITE_PORTAL_TARGET', 'yandex');
+    delete globalThis.window.YaGames;
+    const sdk = await freshModule();
+    expect(() => {
+      sdk.init();
+      sdk.loadingStart();
+      sdk.loadingStop();
+      sdk.gameplayStart();
+      sdk.gameplayStop();
+      sdk.happytime();
+    }).not.toThrow();
+    expect(sdk.isInGameplay()).toBe(false);
+  });
+
+  it('maps loadingStop() to LoadingAPI.ready(), firing only once even from multiple call sites', async () => {
+    vi.stubEnv('VITE_PORTAL', '1');
+    vi.stubEnv('VITE_PORTAL_TARGET', 'yandex');
+    const calls = [];
+    globalThis.window.YaGames = {
+      init: () => Promise.resolve({
+        features: {
+          LoadingAPI: { ready: () => calls.push('ready') },
+          GameplayAPI: { start: () => {}, stop: () => {} },
+        },
+      }),
+    };
+    const sdk = await freshModule();
+    sdk.init();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    sdk.loadingStop();
+    sdk.loadingStop();
+    sdk.loadingStop();
+    expect(calls).toEqual(['ready']);
+  });
+
+  it('loadingStart() is a no-op on this target (no such signal in the Yandex SDK)', async () => {
+    vi.stubEnv('VITE_PORTAL', '1');
+    vi.stubEnv('VITE_PORTAL_TARGET', 'yandex');
+    const calls = [];
+    globalThis.window.YaGames = {
+      init: () => Promise.resolve({
+        features: {
+          LoadingAPI: { ready: () => calls.push('ready') },
+          GameplayAPI: { start: () => {}, stop: () => {} },
+        },
+      }),
+    };
+    const sdk = await freshModule();
+    sdk.init();
+    sdk.loadingStart();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(calls).toEqual([]);
+  });
+
+  it('happytime() is a no-op on this target (no Yandex equivalent)', async () => {
+    vi.stubEnv('VITE_PORTAL', '1');
+    vi.stubEnv('VITE_PORTAL_TARGET', 'yandex');
+    let called = false;
+    globalThis.window.YaGames = {
+      init: () => Promise.resolve({
+        features: {
+          LoadingAPI: { ready: () => {} },
+          GameplayAPI: { start: () => {}, stop: () => {} },
+        },
+      }),
+    };
+    const sdk = await freshModule();
+    sdk.init();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(() => sdk.happytime()).not.toThrow();
+    expect(called).toBe(false);
+  });
+
+  it('maps gameplayStart/Stop to GameplayAPI.start/stop, idempotently', async () => {
+    vi.stubEnv('VITE_PORTAL', '1');
+    vi.stubEnv('VITE_PORTAL_TARGET', 'yandex');
+    const calls = [];
+    globalThis.window.YaGames = {
+      init: () => Promise.resolve({
+        features: {
+          LoadingAPI: { ready: () => {} },
+          GameplayAPI: { start: () => calls.push('start'), stop: () => calls.push('stop') },
+        },
+      }),
+    };
+    const sdk = await freshModule();
+    sdk.init();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    sdk.gameplayStart();
+    sdk.gameplayStart(); // duplicate — absorbed
+    expect(sdk.isInGameplay()).toBe(true);
+    expect(calls).toEqual(['start']);
+
+    sdk.gameplayStop();
+    sdk.gameplayStop(); // duplicate — absorbed
+    expect(sdk.isInGameplay()).toBe(false);
+    expect(calls).toEqual(['start', 'stop']);
+  });
+
+  it('queues calls made before init() resolves and flushes them in order once it does', async () => {
+    vi.stubEnv('VITE_PORTAL', '1');
+    vi.stubEnv('VITE_PORTAL_TARGET', 'yandex');
+    const calls = [];
+    let resolveInit;
+    globalThis.window.YaGames = {
+      init: () => new Promise((resolve) => { resolveInit = resolve; }),
+    };
+    const sdk = await freshModule();
+    sdk.init();
+    sdk.gameplayStart();
+    expect(calls).toEqual([]); // nothing fires before init() resolves
+
+    resolveInit({
+      features: {
+        LoadingAPI: { ready: () => {} },
+        GameplayAPI: { start: () => calls.push('start'), stop: () => calls.push('stop') },
+      },
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(calls).toEqual(['start']);
+  });
+
+  it('gameplayStop() resets isInGameplay() even when init() fails after a gameplayStart() was already queued', async () => {
+    vi.stubEnv('VITE_PORTAL', '1');
+    vi.stubEnv('VITE_PORTAL_TARGET', 'yandex');
+    let rejectInit;
+    globalThis.window.YaGames = {
+      init: () => new Promise((_resolve, reject) => { rejectInit = reject; }),
+    };
+    const sdk = await freshModule();
+    sdk.init();
+    sdk.gameplayStart(); // queued — init() hasn't resolved or rejected yet
+    expect(sdk.isInGameplay()).toBe(true);
+
+    rejectInit(new Error('network failure'));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    sdk.gameplayStop();
+    expect(sdk.isInGameplay()).toBe(false);
+  });
+});
