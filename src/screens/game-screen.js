@@ -5,7 +5,7 @@ import { DrawingEngine } from '../engine/drawing-engine.js';
 import { ComparisonEngine } from '../engine/comparison-engine.js';
 import { playClick, playSubmit, playHint } from '../engine/audio-engine.js';
 import { track } from '../engine/analytics.js';
-import { getContextCanvas, getTargetStyle } from '../engine/context-renderer.js';
+import { getContextCanvas, getTargetStyle, getContextBaseColor } from '../engine/context-renderer.js';
 import { loadRegionGeometry } from '../engine/region-geometry.js';
 import * as portalSdk from '../engine/portal-sdk.js';
 
@@ -77,12 +77,12 @@ export class GameScreen {
 
     el.innerHTML = `
       <div style="position: relative; width: 100%; max-width: 100vw; margin: 0 auto; display: flex; flex-direction: column;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; text-transform: uppercase; font-size: 0.9rem; font-weight: bold; letter-spacing: 1px; height: 1.5rem;">
-          <div style="display: flex; align-items: center; gap: 0.5rem;">
+        <div class="top-header-row top-header-row-reserve" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; text-transform: uppercase; font-size: 0.9rem; font-weight: bold; letter-spacing: 1px; height: 1.5rem;">
+          <div class="top-header-row-left" style="display: flex; align-items: center; gap: 0.5rem;">
             <button class="btn btn-icon" data-action="back" style="font-size: 1.2rem; padding: 0; min-height: 0; min-width: 0; line-height: 1; border: none; background: transparent; color: var(--text-secondary);"><i data-lucide="arrow-left"></i></button>
-            <span id="region-name" style="color: var(--text-primary); line-height: 1;">${regionName}</span>
+            <span id="region-name" class="top-header-row-name" style="color: var(--text-primary); line-height: 1;">${regionName}</span>
           </div>
-          <div style="display: flex; align-items: center; gap: 1rem;">
+          <div class="top-header-row-right" style="display: flex; align-items: center;">
             ${mode === 'blind' ? `
               <div class="timer-ring-container" style="display:flex; align-items:center; position: relative;">
                 <svg class="timer-ring-svg" viewBox="0 0 40 40" style="width: 24px; height: 24px; transform: rotate(-90deg);">
@@ -93,7 +93,7 @@ export class GameScreen {
               </div>
               <button class="btn btn-icon animate-breathe" id="btn-hint" data-action="hint" title="${t('hint_title', {count: this.hintsRemaining})}" style="font-size: 1rem; padding: 0; min-height: 0; min-width: 0; line-height: 1; border: none; background: transparent; display: flex; align-items: center;"><i data-lucide="lightbulb" style="color: var(--warning, #f39c12); width: 20px; height: 20px;"></i></button>
             ` : ''}
-            <span id="mode-text" style="color: var(--text-secondary); line-height: 1;">${modeText}</span>
+            <span id="mode-text" class="top-header-row-mode-text" style="color: var(--text-secondary); line-height: 1;">${modeText}</span>
           </div>
         </div>
       </div>
@@ -212,8 +212,22 @@ export class GameScreen {
         });
 
       this.drawingEngine.setExtraRender(() => {
+        // #27: below the mobile breakpoint the canvas can now be much
+        // taller than the target's own bounding box, so the context
+        // image's aspect-preserving fit (must match ComparisonEngine's
+        // own transform — see getContextCanvas's doc comment) doesn't
+        // necessarily cover the full canvas. Painting the SAME base tone
+        // the context image itself uses for open water, across the whole
+        // canvas first, means any uncovered margin continues the map's
+        // own field color instead of flashing the raw white canvas
+        // background as a visible seam — purely a background fill, same
+        // layer order as before, no change to the target transform, the
+        // drawing buffer, or what gets scored.
+        const ctx = this.canvasManager.getContext();
+        ctx.fillStyle = getContextBaseColor(this.theme);
+        ctx.fillRect(0, 0, this.canvasManager.width, this.canvasManager.height);
         if (this.contextCanvas) {
-          this.canvasManager.getContext().drawImage(
+          ctx.drawImage(
             this.contextCanvas, 0, 0, this.canvasManager.width, this.canvasManager.height
           );
         }

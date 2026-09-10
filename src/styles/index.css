@@ -365,6 +365,27 @@ h1, h2, h3, h4, h5, h6 {
   position: relative;
 }
 
+/* Below the desktop breakpoint, .screen is a fixed-height flex column
+   (position: absolute, inset 0 — see .screen) with plenty of unused height
+   below the fixed 16/9-capped canvas (#27). Let the canvas grow to fill
+   whatever's left after the header and toolbar instead: drop the aspect
+   ratio/height cap and flex-grow it. `min-height: 0` is required for a
+   flex item to actually shrink/grow below its content's intrinsic size
+   (see CanvasManager's <canvas>, which starts at the browser-default
+   300x150 before the first resize() measures the real container size).
+   game-screen.js doesn't wrap this in .scroll-container, so this must add
+   up to exactly .screen's height or the round-trips into page scroll. */
+@media (max-width: 767px) {
+  .canvas-container {
+    max-width: none;
+    max-height: none;
+    aspect-ratio: auto;
+    flex: 1 1 auto;
+    min-height: 0;
+    margin: 0.5rem auto;
+  }
+}
+
 [data-theme='night'] .canvas-container {
   box-shadow: inset 0 0 20px rgba(0,245,212,0.1);
 }
@@ -684,6 +705,83 @@ h1, h2, h3, h4, h5, h6 {
 .game-header .mode-badge {
   font-size: 0.7rem;
   padding: 0.2rem 0.6rem;
+}
+
+.top-header-row-right {
+  gap: 1rem;
+}
+
+/* Shared "region name / mode label" header row (#27) — used by GameScreen
+   and, per player, by ResultScreen. Below the desktop breakpoint .screen
+   spans the full viewport width, and stays close enough to it (capped at
+   max-width: 600px, centered) up to ~930px wide, that a full-width row like
+   this runs right up under the fixed .top-controls (lang + sound + theme
+   buttons, top: 1rem; right: 1rem — ~156px wide, ~164px clearance needed
+   from the row's own right edge). Reserve that with .top-header-row-reserve
+   (added only on whichever row actually sits near the viewport's right edge
+   — see callers) so the mode label/timer/hint group never renders
+   underneath. Not needed beyond ~930px: .screen's centered 600px card is
+   far enough from the viewport's right edge by then; 1280px (desktop's own
+   canvas.max-width) is well clear of this range either way.
+
+   Below that reserved width, BOTH groups are allowed to shrink and share
+   the squeeze (rather than one side taking 100% of it, which previously
+   collapsed the back button and region name to literally 0px on mainstream
+   phones in blind mode — #27 review). Icons (back button, blind-mode timer
+   ring, hint button) get flex-shrink: 0 so they're never visually crushed;
+   the two text labels (.top-header-row-name, .top-header-row-mode-text)
+   are what actually yields, each floored at a ~2-character min-width so
+   neither can vanish outright — full visibility only for the widths named
+   in #27's acceptance criteria (360/393/540px, single-line labels), not a
+   guarantee across every width/mode combination the geometry can't fit. */
+@media (max-width: 930px) {
+  .top-header-row-reserve {
+    padding-right: 10.5rem;
+  }
+  .top-header-row-left {
+    min-width: 0;
+    flex-shrink: 1;
+  }
+  .top-header-row-left .btn-icon {
+    flex-shrink: 0;
+  }
+  .top-header-row-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 2ch;
+    flex-shrink: 1;
+  }
+  .top-header-row-right {
+    min-width: 0;
+    flex-shrink: 1;
+    /* Blind mode adds a timer ring + hint button ahead of the mode label;
+       tighten their gaps here (only reached once the mode label has
+       already ellipsized away) so "HAFIZADAN"/"FROM MEMORY" plus both
+       icons still clears .top-controls at a 393px-class width. */
+    gap: 0.5rem;
+    /* Below ~380px in blind mode, the timer ring + hint button (both
+       flex-shrink: 0 — never visually crushed) plus even a fully
+       ellipsized mode label can still add up to more than this box's own
+       shrunk width; without this, that excess doesn't get clipped by a
+       shrunk flex item, it just paints past the box's right edge — which
+       is exactly the reserved .top-controls clearance. Clip it here
+       instead: a partially-hidden hint icon is a better degraded state
+       than one that visually overlaps (and can intercept taps on) a live
+       EN/sound/theme button. */
+    overflow: hidden;
+  }
+  .top-header-row-right .timer-ring-container,
+  .top-header-row-right .btn-icon {
+    flex-shrink: 0;
+  }
+  .top-header-row-mode-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 2ch;
+    flex-shrink: 1;
+  }
 }
 
 .home-modes {

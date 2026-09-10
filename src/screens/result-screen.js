@@ -135,17 +135,24 @@ export class ResultScreen {
       const rankName = lang === 'en' ? pRank.nameEn : pRank.name;
       // Ensure the text wrapper is exactly the same width as the canvas
       const widthStr = vData ? `max-width: ${vData.canvasWidth}px;` : 'width: 100%;';
+      // #27: in 2-player mode the two headers sit side by side, each capped
+      // to its own (much narrower) canvas width — only the rightmost one
+      // (player 2) can ever reach the fixed .top-controls in the corner, so
+      // only it reserves room for them; reserving on player 1's (leftmost,
+      // nowhere near the buttons) would just needlessly ellipsis its region
+      // name for no benefit.
+      const nearTopControls = !isMultiplayer || num === 2;
       return `
       <div style="display: flex; flex-direction: column; width: 100%; ${widthStr} margin: 0 auto;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; text-transform: uppercase; font-size: 0.9rem; font-weight: bold; letter-spacing: 1px; height: 1.5rem;">
-          <div style="display: flex; align-items: center; gap: 0.5rem;">
+        <div class="top-header-row${nearTopControls ? ' top-header-row-reserve' : ''}" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; text-transform: uppercase; font-size: 0.9rem; font-weight: bold; letter-spacing: 1px; height: 1.5rem;">
+          <div class="top-header-row-left" style="display: flex; align-items: center; gap: 0.5rem;">
             <button style="visibility: hidden; font-size: 1.2rem; padding: 0; min-height: 0; min-width: 0; line-height: 1; border: none; background: transparent;"><i data-lucide="arrow-left"></i></button>
-            <span style="color: var(--text-primary); line-height: 1;">${regionName}${isMultiplayer ? ` (${t('player')}${num})` : ''}</span>
+            <span class="top-header-row-name" style="color: var(--text-primary); line-height: 1;">${regionName}${isMultiplayer ? ` (${t('player')}${num})` : ''}</span>
           </div>
-          <div style="display: flex; align-items: center; gap: 1rem;">
+          <div class="top-header-row-right" style="display: flex; align-items: center;">
             ${isMultiplayer
-              ? `<span id="p${num}-result-label" style="color: var(--text-secondary); line-height: 1; visibility: hidden;"></span>`
-              : `<span style="color: var(--text-secondary); line-height: 1;">${modeText}</span>`}
+              ? `<span id="p${num}-result-label" class="top-header-row-mode-text" style="color: var(--text-secondary); line-height: 1; visibility: hidden;"></span>`
+              : `<span class="top-header-row-mode-text" style="color: var(--text-secondary); line-height: 1;">${modeText}</span>`}
           </div>
         </div>
         <div id="p${num}-canvas-container" style="width: 100%; margin: 1rem auto; background: var(--button-bg); border-radius: var(--radius-md); padding: 1rem; border: 1px solid var(--border-color);"></div>
@@ -734,30 +741,86 @@ export class ResultScreen {
   async renderComparisonCanvas(container, visualData, theme, region) {
     if (!visualData) return;
     const displayCanvas = document.createElement('canvas');
-    
+    const { targetPoly, userPoly, rays } = visualData;
+
     // Use exact original drawing canvas width to ensure 1:1 sizing
     const maxWidth = visualData.canvasWidth;
-    
     const aspect = visualData.canvasHeight / visualData.canvasWidth;
-    displayCanvas.width = maxWidth;
-    displayCanvas.height = maxWidth * aspect;
-    displayCanvas.style.width = maxWidth + 'px';
-    displayCanvas.style.maxWidth = '100%';
+
+    // #27: below the mobile breakpoint the drawing canvas this visualData
+    // was recorded from now fills most of the screen's height (see
+    // .canvas-container's flex-fill rule), so replaying the FULL canvas
+    // 1:1 here — much of it empty margin around the actual shape — either
+    // pushes SCORE / the rank badge / NEXT below the fold, or (capping
+    // display height alone) shrinks the whole thing, target included, into
+    // a narrow sliver. Neither is what #27 was about; the result canvas
+    // was always a bounded strip with content below it. Instead, crop to
+    // a box around just the target ring + the user's own points (+ a
+    // margin) and map THAT onto the display canvas with one uniform
+    // scale — every draw call below still uses its original visualData
+    // coordinates unmodified, so target/user/rays stay in exact relative
+    // alignment (a zoom of the same coordinate space, not a different
+    // fit); only the crop reframes what's visible. Desktop (>=768px) is
+    // untouched — its aspect was never affected by the mobile canvas-fill
+    // change, so the old 1:1-with-cap path is kept there rather than
+    // risking a look the lead hasn't reviewed.
+    const isMobile = window.innerWidth < 768;
+    let cropMinX = 0, cropMinY = 0, cropW = visualData.canvasWidth, cropH = visualData.canvasHeight;
+    if (isMobile) {
+      const pts = [...targetPoly, ...userPoly];
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const p of pts) {
+        minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+        minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+      }
+      if (Number.isFinite(minX)) {
+        const rawW = Math.max(1, maxX - minX);
+        const rawH = Math.max(1, maxY - minY);
+        const marginX = rawW * 0.15;
+        const marginY = rawH * 0.15;
+        cropMinX = Math.max(0, minX - marginX);
+        cropMinY = Math.max(0, minY - marginY);
+        cropW = Math.min(visualData.canvasWidth - cropMinX, rawW + marginX * 2);
+        cropH = Math.min(visualData.canvasHeight - cropMinY, rawH + marginY * 2);
+      }
+    }
+
+    const maxDisplayHeight = isMobile ? window.innerHeight * 0.4 : Infinity;
+    const availWidth = maxWidth; // container's natural width, unchanged
+    const scale = isMobile
+      ? Math.min(availWidth / cropW, maxDisplayHeight / cropH)
+      : maxWidth / visualData.canvasWidth; // desktop: original 1:1-with-cap behavior
+    const displayWidth = isMobile ? cropW * scale : maxWidth;
+    const displayHeight = isMobile ? cropH * scale : maxWidth * aspect;
+
+    displayCanvas.width = displayWidth;
+    displayCanvas.height = displayHeight;
+    displayCanvas.style.width = displayWidth + 'px';
+    // 'auto', not a fixed px value: 2-player mode's columns are narrower
+    // than `maxWidth` (each recorded from that player's own FULL-width
+    // single-player turn, then squeezed side by side by the result
+    // screen's own flex row — see renderPlayerHtml's widthStr comment),
+    // so `max-width:100%` below often clamps the rendered WIDTH down
+    // further than this. `height:auto` lets the browser derive height
+    // from the canvas's own intrinsic ratio (its width/height attributes,
+    // set right above) whenever that clamp fires, keeping the overlay's
+    // aspect ratio correct instead of stretching/squashing it — a fixed
+    // px height here doesn't respond to the width clamp at all.
     displayCanvas.style.height = 'auto';
-    
+    displayCanvas.style.maxWidth = '100%';
+    displayCanvas.style.display = 'block';
+    displayCanvas.style.margin = '0 auto';
+
     // Minimalist styling
     displayCanvas.style.border = '2px solid var(--border-color)';
     displayCanvas.style.background = 'transparent';
 
     const ctx = displayCanvas.getContext('2d');
-    const scaleX = maxWidth / visualData.canvasWidth;
-    const scaleY = (maxWidth * aspect) / visualData.canvasHeight;
-    
-    ctx.scale(scaleX, scaleY);
+    const scaleY = isMobile ? scale : (maxWidth * aspect) / visualData.canvasHeight;
+    ctx.scale(scale, scaleY);
+    ctx.translate(-cropMinX, -cropMinY);
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
-
-    const { targetPoly, userPoly, rays } = visualData;
 
     // -1. Neighbour context (#18c) — shown on the result overlay regardless
     // of whether the round was trace or blind (only live GAMEPLAY hides it

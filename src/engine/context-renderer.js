@@ -55,6 +55,21 @@ const PALETTES = {
   },
 };
 
+// #27: the neighbour-context image doesn't necessarily cover its whole
+// width×height — the fit preserves aspect ratio (see getContextCanvas's
+// own doc comment; it must, to stay the exact same transform scoring uses)
+// and the canvas can now be much taller than a region's own bounding box,
+// leaving margins above/below where the context image has nothing to
+// draw. Those margins ARE already this palette's `sea`, painted by
+// getContextCanvas's own fillRect — but callers that draw target/canvas
+// content on layers ABOVE or SEPARATE from that context image (the game
+// screen's own canvas, drawn fresh every stroke) need the same base tone
+// so the canvas's edge doesn't flash the raw white canvas background
+// before/around the context image.
+export function getContextBaseColor(theme) {
+  return (PALETTES[theme] || PALETTES.day).sea;
+}
+
 // Target region "selection" styling (#18 restyle) — Google-Maps-like flat
 // fill + edge, shared by game-screen.js (trace mode) and result-screen.js
 // (the result overlay) so both use the exact same colors per theme. No
