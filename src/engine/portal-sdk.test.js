@@ -538,4 +538,113 @@ describe('portal-sdk wrapper — getPortalLanguage() (#26)', () => {
     await expect(sdk.getPortalLanguage()).resolves.toBe('tr');
     expect(initCalls).toBe(1);
   });
+
+  it('logs the raw i18n.lang value once init() settles, for the Yandex debug panel indicator (#26 follow-up)', async () => {
+    vi.stubEnv('VITE_PORTAL', '1');
+    vi.stubEnv('VITE_PORTAL_TARGET', 'yandex');
+    stubYaGames('tr');
+    const sdk = await freshModule();
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await sdk.getPortalLanguage();
+    expect(spy).toHaveBeenCalledWith('[yandex] i18n.lang', 'tr');
+    spy.mockRestore();
+  });
+});
+
+/**
+ * #26 follow-up: Yandex moderation rejected the game because the ORIGINAL
+ * getPortalLanguage() raced the i18n READ ITSELF against the first-paint
+ * timeout — when init() lost that race, the read never happened at all, so
+ * the debug panel's indicator never observed one. These cover the fix: the
+ * read (ensureLanguageRead(), reached via onLanguageDetected()) must always
+ * complete once init() settles, independent of how getPortalLanguage()'s
+ * own timeout resolved.
+ */
+describe('portal-sdk wrapper — late i18n read after the first-paint timeout (#26 follow-up)', () => {
+  beforeEach(() => {
+    globalThis.window = globalThis.window || {};
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.useRealTimers();
+    delete globalThis.window?.YaGames;
+  });
+
+  it('init settling after the timeout still reads the language, delivered via onLanguageDetected()', async () => {
+    vi.stubEnv('VITE_PORTAL', '1');
+    vi.stubEnv('VITE_PORTAL_TARGET', 'yandex');
+    vi.useFakeTimers();
+    let resolveInit;
+    globalThis.window.YaGames = {
+      init: () => new Promise((resolve) => { resolveInit = resolve; }),
+    };
+    const sdk = await freshModule();
+
+    const firstPaintLanguage = sdk.getPortalLanguage();
+    await vi.advanceTimersByTimeAsync(3000); // the 3s first-paint timeout wins the race
+    await expect(firstPaintLanguage).resolves.toBeNull();
+
+    let detected = 'not called';
+    sdk.onLanguageDetected((lang) => { detected = lang; });
+
+    // init() FINALLY settles, well after the timeout — the read must still happen.
+    resolveInit({
+      environment: { i18n: { lang: 'tr' } },
+      features: { LoadingAPI: { ready: () => {} }, GameplayAPI: { start: () => {}, stop: () => {} } },
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(detected).toBe('tr');
+  });
+
+  it('onLanguageDetected() still delivers the language after getPortalLanguage() already consumed it — the read is unconditional, not gated on any saved-preference decision', async () => {
+    vi.stubEnv('VITE_PORTAL', '1');
+    vi.stubEnv('VITE_PORTAL_TARGET', 'yandex');
+    globalThis.window.YaGames = {
+      init: () => Promise.resolve({
+        environment: { i18n: { lang: 'tr' } },
+        features: { LoadingAPI: { ready: () => {} }, GameplayAPI: { start: () => {}, stop: () => {} } },
+      }),
+    };
+    const sdk = await freshModule();
+    await expect(sdk.getPortalLanguage()).resolves.toBe('tr');
+
+    let detected;
+    sdk.onLanguageDetected((lang) => { detected = lang; });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(detected).toBe('tr');
+  });
+
+  it('onLanguageDetected() delivers null (not silence) when the read completes but reports no usable language', async () => {
+    vi.stubEnv('VITE_PORTAL', '1');
+    vi.stubEnv('VITE_PORTAL_TARGET', 'yandex');
+    globalThis.window.YaGames = {
+      init: () => Promise.resolve({
+        environment: {},
+        features: { LoadingAPI: { ready: () => {} }, GameplayAPI: { start: () => {}, stop: () => {} } },
+      }),
+    };
+    const sdk = await freshModule();
+    let detected = 'not called';
+    sdk.onLanguageDetected((lang) => { detected = lang; });
+    // Flush every microtask in the init()->ensureLanguageRead()->callback
+    // chain (a plain macrotask tick, rather than counting .then() hops).
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(detected).toBeNull();
+  });
+
+  it('onLanguageDetected() is a no-op outside the portal build / non-yandex target, without touching window.YaGames', async () => {
+    vi.stubEnv('VITE_PORTAL', undefined);
+    vi.stubEnv('VITE_PORTAL_TARGET', 'yandex');
+    let touched = false;
+    globalThis.window.YaGames = { init: () => { touched = true; return Promise.resolve({}); } };
+    const sdk = await freshModule();
+    let called = false;
+    expect(() => sdk.onLanguageDetected(() => { called = true; })).not.toThrow();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(called).toBe(false);
+    expect(touched).toBe(false);
+  });
 });

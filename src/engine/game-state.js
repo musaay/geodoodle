@@ -100,6 +100,10 @@ export class GameState {
       if (saved) {
         const loadedState = { ...freshDefaultState(), ...JSON.parse(saved) };
         setLanguage(loadedState.language);
+        // #26 follow-up: a returning player's saved preference exists —
+        // the late-apply in main.js (portalSdk.onLanguageDetected()) must
+        // never override it, only a true first run below is eligible.
+        this.hadSavedState = true;
         return loadedState;
       }
     } catch (e) {
@@ -108,6 +112,7 @@ export class GameState {
     // True first run — no saved preference to respect. The Yandex SDK's
     // reported language (#26) wins when available; otherwise fall back to
     // the existing browser-language detection, as on every other target.
+    this.hadSavedState = false;
     const state = { ...freshDefaultState(), language: portalLanguage || detectBrowserLanguage() };
     setLanguage(state.language);
     return state;
@@ -147,6 +152,37 @@ export class GameState {
     this.state.language = this.state.language === 'tr' ? 'en' : 'tr';
     setLanguage(this.state.language);
     this.save();
+  }
+
+  /**
+   * Explicit setter (#26 follow-up), used by main.js to apply a
+   * late-arriving Yandex SDK language read after first paint. Unlike
+   * toggleLanguage() this is idempotent — a no-op for an invalid/unchanged
+   * value — since the caller can't know in advance whether the value it
+   * read differs from what's already showing.
+   */
+  setLanguage(lang) {
+    if ((lang !== 'tr' && lang !== 'en') || this.state.language === lang) return;
+    this.state.language = lang;
+    setLanguage(lang);
+    this.save();
+  }
+
+  /**
+   * Pure decision helper (#26 follow-up) for whether a late Yandex-SDK
+   * language read (arriving after first paint, via portal-sdk.js's
+   * onLanguageDetected()) is still eligible to be applied: a real, actually
+   * different language, on a true first run only (`hadSavedState`), and
+   * only if nothing has since made the decision moot — the player already
+   * toggled language by hand (`manualChange`), or a round is already in
+   * progress (`inGameplay`, from portalSdk.isInGameplay()) — moderation
+   * requirement 2.14 allows a short startup delay, not a mid-gameplay
+   * switch. The actual apply (setLanguage() + screen refresh) is main.js's
+   * job; kept here, not there, so it has a DOM-free unit test.
+   */
+  canApplyLatePortalLanguage(lang, { manualChange = false, inGameplay = false } = {}) {
+    if (!lang || lang === this.state.language) return false;
+    return !this.hadSavedState && !manualChange && !inGameplay;
   }
 
   setTheme(theme) {

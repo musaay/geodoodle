@@ -43,6 +43,14 @@ import { DailySummaryScreen } from './screens/daily-summary-screen.js';
 import { HandoffScreen } from './screens/handoff-screen.js';
 import * as portalSdk from './engine/portal-sdk.js';
 
+// #26 follow-up: kick off SDK init as early as this module can physically
+// manage — before the icon shim, before the class body below, before the
+// boot IIFE's own init() call at the bottom of this file. Every tick matters
+// for how soon the Yandex i18n read (portal-sdk.js's ensureLanguageRead())
+// can complete. A safe no-op outside the portal build/yandex target, and
+// idempotent with every later init() call (see portal-sdk.js).
+portalSdk.init();
+
 // Bundled Lucide (was unpkg CDN). Screens keep calling window.lucide.createIcons();
 // the shim always passes the bundled icon set along.
 window.lucide = {
@@ -76,6 +84,10 @@ class GeoDoodleApp {
     // #23: remembers a gameplay round paused by the tab going hidden, so it
     // can resume on return — see the visibilitychange listener below.
     this._resumeGameplayOnVisible = false;
+    // #26 follow-up: set once the player manually toggles language, so a
+    // late Yandex SDK language read (boot IIFE below) never overrides a
+    // deliberate in-session choice.
+    this._manualLanguageChange = false;
 
     // Screen instances
     this.screens = {
@@ -395,29 +407,43 @@ class GeoDoodleApp {
     langBtn.id = 'lang-toggle';
     langBtn.innerText = this.gameState.getLanguage().toUpperCase();
     langBtn.addEventListener('click', () => {
+      // #26 follow-up: a manual click is a deliberate, in-session choice —
+      // a late Yandex SDK language read arriving afterward must never
+      // clobber it (see the boot IIFE at the bottom of this file).
+      this._manualLanguageChange = true;
       this.gameState.toggleLanguage();
-      langBtn.innerText = this.gameState.getLanguage().toUpperCase();
-      
-      // Re-render current screen
-      if (this.currentScreen) {
-        const currentId = this.currentScreen.id;
-        if (currentId === 'home-screen') this.showHome();
-        else if (currentId === 'level-select-screen') this.showLevelSelect(this.screens.levelSelect.currentFilter);
-        else if (currentId === 'stats-screen') this.showStats();
-        // For game and result screens, we shouldn't fully re-render to avoid losing state, 
-        // but for simplicity we will just let the user see translations on next screen or we can update specific elements.
-        else if (currentId === 'game-screen') {
-          if (this.screens.game.updateLanguage) {
-            this.screens.game.updateLanguage();
-          }
-        }
-      }
+      this.onLanguageChanged();
     });
 
     container.appendChild(langBtn);
     container.appendChild(soundBtn);
     container.appendChild(themeBtn);
     document.body.appendChild(container);
+  }
+
+  /**
+   * Re-syncs the lang toggle button label and re-renders/relabels whatever
+   * screen is currently showing. Shared by the manual toggle button click
+   * and (#26 follow-up) the late Yandex-SDK-detected-language apply in the
+   * boot IIFE at the bottom of this file.
+   */
+  onLanguageChanged() {
+    const langBtn = document.getElementById('lang-toggle');
+    if (langBtn) langBtn.innerText = this.gameState.getLanguage().toUpperCase();
+
+    if (this.currentScreen) {
+      const currentId = this.currentScreen.id;
+      if (currentId === 'home-screen') this.showHome();
+      else if (currentId === 'level-select-screen') this.showLevelSelect(this.screens.levelSelect.currentFilter);
+      else if (currentId === 'stats-screen') this.showStats();
+      // For game and result screens, we shouldn't fully re-render to avoid losing state,
+      // but for simplicity we will just let the user see translations on next screen or we can update specific elements.
+      else if (currentId === 'game-screen') {
+        if (this.screens.game.updateLanguage) {
+          this.screens.game.updateLanguage();
+        }
+      }
+    }
   }
 
   /** Show a toast notification */
@@ -461,5 +487,25 @@ class GeoDoodleApp {
 // portal-sdk.js's own timeout on this call.
 (async () => {
   const portalLanguage = await portalSdk.getPortalLanguage();
-  new GeoDoodleApp(portalLanguage);
+  const app = new GeoDoodleApp(portalLanguage);
+
+  // #26 follow-up: getPortalLanguage() timed out before the SDK's i18n read
+  // landed — the first screen already painted with the browser-detected
+  // fallback. portal-sdk.js keeps reading in the background regardless of
+  // how long init() takes, so apply it the moment it resolves, but only for
+  // a true first run (a saved preference, or a language the player already
+  // picked by hand since boot, must never be overridden) and only while no
+  // round has started — the requirement allows a short startup delay, not a
+  // mid-gameplay language switch.
+  if (portalLanguage === null && !app.gameState.hadSavedState) {
+    portalSdk.onLanguageDetected((lang) => {
+      const eligible = app.gameState.canApplyLatePortalLanguage(lang, {
+        manualChange: app._manualLanguageChange,
+        inGameplay: portalSdk.isInGameplay(),
+      });
+      if (!eligible) return;
+      app.gameState.setLanguage(lang);
+      app.onLanguageChanged();
+    });
+  }
 })();

@@ -368,4 +368,109 @@ describe('GameState first-run language', () => {
     const state = new GameState(null);
     expect(state.getLanguage()).toBe('tr');
   });
+
+  // #26 follow-up: main.js uses hadSavedState to decide whether a late
+  // Yandex SDK language read (arriving after first paint) is eligible to
+  // be applied — only ever true on a genuine first run.
+  it('hadSavedState is false on a true first run and true once a preference has been saved', () => {
+    const first = new GameState();
+    expect(first.hadSavedState).toBe(false);
+
+    first.save();
+    const returning = new GameState();
+    expect(returning.hadSavedState).toBe(true);
+  });
+
+  // code-reviewer follow-up: a throwing localStorage (private-mode quota,
+  // corrupted store) is caught by load()'s existing try/catch and must be
+  // treated as a first run, same as no saved key at all — never left
+  // reporting hadSavedState === true for storage that was never read.
+  it('hadSavedState is false when localStorage.getItem throws', () => {
+    const originalGetItem = globalThis.localStorage.getItem;
+    globalThis.localStorage.getItem = () => { throw new Error('storage unavailable'); };
+    try {
+      const state = new GameState();
+      expect(state.hadSavedState).toBe(false);
+    } finally {
+      globalThis.localStorage.getItem = originalGetItem;
+    }
+  });
+});
+
+describe('GameState.setLanguage (#26 follow-up)', () => {
+  beforeEach(() => {
+    globalThis.localStorage.clear();
+  });
+
+  it('applies a valid language and persists it', () => {
+    const state = new GameState();
+    state.setLanguage('tr');
+    expect(state.getLanguage()).toBe('tr');
+
+    const reloaded = new GameState();
+    expect(reloaded.getLanguage()).toBe('tr');
+  });
+
+  it('is a no-op for an invalid value', () => {
+    const state = new GameState();
+    state.state.language = 'en';
+    state.setLanguage('fr');
+    expect(state.getLanguage()).toBe('en');
+  });
+
+  it('is a no-op when the value already matches (no redundant save/notify)', () => {
+    const state = new GameState();
+    state.state.language = 'en';
+    let notified = false;
+    state.onChange(() => { notified = true; });
+    state.setLanguage('en');
+    expect(notified).toBe(false);
+  });
+});
+
+describe('GameState.canApplyLatePortalLanguage (#26 follow-up)', () => {
+  beforeEach(() => {
+    globalThis.localStorage.clear();
+  });
+
+  it('is eligible on a true first run, with a real, different language, no manual change and no round started', () => {
+    const state = new GameState(); // true first run -> hadSavedState === false
+    state.state.language = 'en';
+    expect(state.canApplyLatePortalLanguage('tr')).toBe(true);
+  });
+
+  it('is not eligible once a round has started, even on a true first run', () => {
+    const state = new GameState();
+    state.state.language = 'en';
+    expect(state.canApplyLatePortalLanguage('tr', { inGameplay: true })).toBe(false);
+  });
+
+  it('is not eligible once the player already changed language by hand', () => {
+    const state = new GameState();
+    state.state.language = 'en';
+    expect(state.canApplyLatePortalLanguage('tr', { manualChange: true })).toBe(false);
+  });
+
+  it('never overrides a returning player\'s saved preference', () => {
+    // Seed storage directly (as the other saved-preference tests above do)
+    // rather than via setLanguage(), which is a guarded no-op when the
+    // target already matches whatever this test env's ambient navigator
+    // language happens to detect.
+    const seed = new GameState();
+    seed.state.language = 'en';
+    seed.save();
+    const returning = new GameState(); // loads the saved 'en' -> hadSavedState === true
+    expect(returning.canApplyLatePortalLanguage('tr')).toBe(false);
+  });
+
+  it('is not eligible for a falsy/unreported language', () => {
+    const state = new GameState();
+    expect(state.canApplyLatePortalLanguage(null)).toBe(false);
+  });
+
+  it('is not eligible when the detected language already matches the current one', () => {
+    const state = new GameState();
+    state.state.language = 'tr';
+    expect(state.canApplyLatePortalLanguage('tr')).toBe(false);
+  });
 });

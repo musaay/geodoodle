@@ -225,17 +225,50 @@ export function init() {
     });
 }
 
-// #26: how long getPortalLanguage() will wait for a pending init() before
-// giving up and returning null — the requirement page explicitly allows "a
-// short delay" before the first screen paints, but the app must never hang
-// on an init() that neither resolves nor rejects (SDK loaded but wedged).
-const LANGUAGE_DETECT_TIMEOUT_MS = 1500;
+// #26 follow-up: Yandex moderation rejected the game — "does not implement
+// automatic language detection via the SDK" (requirement 2.14) — because
+// the ORIGINAL version of this function raced the i18n READ ITSELF against
+// this timeout: when init() lost the race, the function returned null and
+// NEVER touched ysdk.environment.i18n.lang at all, so Yandex's debug panel
+// never observed a read. The timeout below now only bounds how long
+// getPortalLanguage() will hold up the FIRST PAINT — the actual read
+// (ensureLanguageRead() below) always runs to completion once init()
+// settles, no matter how long that takes. Raised from 1.5s to 3s (Yandex
+// hosts sdk.js itself, but a cold environment.init() can still be slow) —
+// the app must still never hang if init() never settles at all.
+const LANGUAGE_DETECT_TIMEOUT_MS = 3000;
+
+// Resolves to 'tr' | 'en' | null once the SDK has actually been read.
+// Created lazily by ensureLanguageRead() and shared by getPortalLanguage()
+// (bounded by the timeout above, for first paint) and onLanguageDetected()
+// (unbounded — fires whenever the read completes, however late). Reading
+// ysdk.environment.i18n.lang is exactly what Yandex's moderation debug
+// panel watches for, so it must happen unconditionally, once, regardless of
+// what any caller does with the result (including an already-saved
+// language preference — applying it stays first-run-only, in GameState).
+let languageReadPromise = null;
+
+function ensureLanguageRead() {
+  if (languageReadPromise) return languageReadPromise;
+  languageReadPromise = Promise.resolve(initSettled).then(() => {
+    if (sdkBroken || !ysdk) return null;
+    const rawLang = ysdk.environment?.i18n?.lang;
+    // Portal-target debug aid so the user can confirm the read actually
+    // happened from Yandex's own debug panel/console (#26 follow-up).
+    console.log('[yandex] i18n.lang', rawLang);
+    if (typeof rawLang !== 'string') return null;
+    return rawLang.toLowerCase() === 'tr' ? 'tr' : 'en';
+  });
+  return languageReadPromise;
+}
 
 /**
  * The player's language per the Yandex SDK (requirement 2.14): 'tr' for
  * 'tr', 'en' for every other code (ru/de/... — we only ship tr/en copy),
  * null when unavailable (not the portal build, not the yandex target, SDK
- * missing, init() failed/timed out, or the SDK doesn't report a language).
+ * missing, init() failed, the SDK doesn't report a language, OR init() just
+ * hasn't settled within LANGUAGE_DETECT_TIMEOUT_MS yet — in that last case
+ * the read keeps going in the background; see onLanguageDetected()).
  * Awaits the same init() flow the rest of this module already kicks off —
  * never calls YaGames.init() a second time — so it's cheap to call this
  * alongside the existing init()/loadingStart() calls in main.js.
@@ -243,14 +276,27 @@ const LANGUAGE_DETECT_TIMEOUT_MS = 1500;
 export async function getPortalLanguage() {
   if (!isPortalBuild() || !isYandexTarget()) return null;
   init();
-  await Promise.race([
-    initSettled,
-    new Promise((resolve) => setTimeout(resolve, LANGUAGE_DETECT_TIMEOUT_MS)),
+  const lang = await Promise.race([
+    ensureLanguageRead(),
+    new Promise((resolve) => setTimeout(resolve, LANGUAGE_DETECT_TIMEOUT_MS)), // resolves undefined on timeout
   ]);
-  if (sdkBroken || !ysdk) return null;
-  const lang = ysdk.environment?.i18n?.lang;
-  if (typeof lang !== 'string') return null;
-  return lang.toLowerCase() === 'tr' ? 'tr' : 'en';
+  return lang ?? null;
+}
+
+/**
+ * One-shot callback for when the i18n read actually completes — fires even
+ * if that happens after getPortalLanguage()'s own timeout already gave up
+ * and returned null (`lang` is that same null in that case too). main.js
+ * uses this to apply the SDK-reported language to a first-run player right
+ * after first paint, when getPortalLanguage() timed out before the read
+ * landed. A no-op outside the portal build / yandex target; never throws.
+ */
+export function onLanguageDetected(callback) {
+  if (!isPortalBuild() || !isYandexTarget()) return;
+  init();
+  ensureLanguageRead().then((lang) => {
+    try { callback(lang); } catch (e) { /* a bad listener must not break SDK internals */ }
+  });
 }
 
 /** Call as early as possible (main.js, before geometry/data fetches). */
@@ -322,4 +368,5 @@ export function __resetForTest() {
   loadingStopped = false;
   ysdk = null;
   initSettled = null;
+  languageReadPromise = null;
 }
