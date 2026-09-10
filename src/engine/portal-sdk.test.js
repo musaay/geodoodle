@@ -428,3 +428,114 @@ describe('portal-sdk wrapper — Yandex adapter', () => {
     expect(sdk.isInGameplay()).toBe(false);
   });
 });
+
+/**
+ * getPortalLanguage() (#26, requirement 2.14) — DOM-free coverage of the
+ * language mapping itself. main.js's "saved preference wins" / "browser
+ * fallback when null" behavior is covered in game-state.test.js instead,
+ * since it lives in GameState.load(), not here.
+ */
+describe('portal-sdk wrapper — getPortalLanguage() (#26)', () => {
+  beforeEach(() => {
+    globalThis.window = globalThis.window || {};
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    delete globalThis.window?.YaGames;
+  });
+
+  function stubYaGames(lang) {
+    globalThis.window.YaGames = {
+      init: () => Promise.resolve({
+        environment: { i18n: { lang } },
+        features: {
+          LoadingAPI: { ready: () => {} },
+          GameplayAPI: { start: () => {}, stop: () => {} },
+        },
+      }),
+    };
+  }
+
+  it("maps 'tr' to 'tr'", async () => {
+    vi.stubEnv('VITE_PORTAL', '1');
+    vi.stubEnv('VITE_PORTAL_TARGET', 'yandex');
+    stubYaGames('tr');
+    const sdk = await freshModule();
+    await expect(sdk.getPortalLanguage()).resolves.toBe('tr');
+  });
+
+  it.each(['ru', 'de', 'en'])("maps '%s' to 'en'", async (lang) => {
+    vi.stubEnv('VITE_PORTAL', '1');
+    vi.stubEnv('VITE_PORTAL_TARGET', 'yandex');
+    stubYaGames(lang);
+    const sdk = await freshModule();
+    await expect(sdk.getPortalLanguage()).resolves.toBe('en');
+  });
+
+  it('resolves null when window.YaGames is missing entirely', async () => {
+    vi.stubEnv('VITE_PORTAL', '1');
+    vi.stubEnv('VITE_PORTAL_TARGET', 'yandex');
+    delete globalThis.window.YaGames;
+    const sdk = await freshModule();
+    await expect(sdk.getPortalLanguage()).resolves.toBeNull();
+  });
+
+  it('resolves null when init() rejects', async () => {
+    vi.stubEnv('VITE_PORTAL', '1');
+    vi.stubEnv('VITE_PORTAL_TARGET', 'yandex');
+    globalThis.window.YaGames = { init: () => Promise.reject(new Error('network failure')) };
+    const sdk = await freshModule();
+    await expect(sdk.getPortalLanguage()).resolves.toBeNull();
+  });
+
+  it('resolves null when the resolved SDK reports no language', async () => {
+    vi.stubEnv('VITE_PORTAL', '1');
+    vi.stubEnv('VITE_PORTAL_TARGET', 'yandex');
+    globalThis.window.YaGames = {
+      init: () => Promise.resolve({
+        environment: {},
+        features: { LoadingAPI: { ready: () => {} }, GameplayAPI: { start: () => {}, stop: () => {} } },
+      }),
+    };
+    const sdk = await freshModule();
+    await expect(sdk.getPortalLanguage()).resolves.toBeNull();
+  });
+
+  it('resolves null outside the portal build', async () => {
+    vi.stubEnv('VITE_PORTAL', undefined);
+    vi.stubEnv('VITE_PORTAL_TARGET', 'yandex');
+    stubYaGames('tr');
+    const sdk = await freshModule();
+    await expect(sdk.getPortalLanguage()).resolves.toBeNull();
+  });
+
+  it('resolves null on a non-Yandex target, without touching window.YaGames', async () => {
+    vi.stubEnv('VITE_PORTAL', '1');
+    vi.stubEnv('VITE_PORTAL_TARGET', undefined);
+    let touched = false;
+    globalThis.window.YaGames = { init: () => { touched = true; return Promise.resolve({}); } };
+    const sdk = await freshModule();
+    await expect(sdk.getPortalLanguage()).resolves.toBeNull();
+    expect(touched).toBe(false);
+  });
+
+  it('never calls YaGames.init() twice when init() already kicked off the same request', async () => {
+    vi.stubEnv('VITE_PORTAL', '1');
+    vi.stubEnv('VITE_PORTAL_TARGET', 'yandex');
+    let initCalls = 0;
+    globalThis.window.YaGames = {
+      init: () => {
+        initCalls += 1;
+        return Promise.resolve({
+          environment: { i18n: { lang: 'tr' } },
+          features: { LoadingAPI: { ready: () => {} }, GameplayAPI: { start: () => {}, stop: () => {} } },
+        });
+      },
+    };
+    const sdk = await freshModule();
+    sdk.init();
+    await expect(sdk.getPortalLanguage()).resolves.toBe('tr');
+    expect(initCalls).toBe(1);
+  });
+});

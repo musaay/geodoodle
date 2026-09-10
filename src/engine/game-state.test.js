@@ -344,4 +344,28 @@ describe('GameState first-run language', () => {
     const state = new GameState();
     expect(state.getLanguage()).toBe('tr');
   });
+
+  // #26: portalLanguage is main.js's Yandex-SDK-detected language (from
+  // portal-sdk.js's getPortalLanguage()) — it must win over browser
+  // detection on a true first run, but never override a saved preference.
+  it('portalLanguage wins over browser detection on a true first run', () => {
+    globalThis.navigator = { languages: ['en-US'], language: 'en-US' };
+    const state = new GameState('tr');
+    expect(state.getLanguage()).toBe('tr');
+  });
+
+  it('an existing saved preference wins over portalLanguage', () => {
+    const seed = new GameState();
+    seed.state.language = 'en';
+    seed.save();
+
+    const state = new GameState('tr');
+    expect(state.getLanguage()).toBe('en');
+  });
+
+  it('falls back to browser detection when portalLanguage is null (non-Yandex targets)', () => {
+    globalThis.navigator = { languages: ['tr-TR'], language: 'tr-TR' };
+    const state = new GameState(null);
+    expect(state.getLanguage()).toBe('tr');
+  });
 });

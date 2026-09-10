@@ -53,15 +53,23 @@ window.lucide = {
  * GeoDoodle App - Main entry point and screen router
  */
 class GeoDoodleApp {
-  constructor() {
+  /**
+   * `portalLanguage` (#26): resolved by boot() below, BEFORE this class is
+   * constructed, so it's available synchronously here for GameState — the
+   * first screen must never paint in the wrong language and flip later.
+   */
+  constructor(portalLanguage = null) {
     // #23: as early as possible, before any geometry/data fetch — queued
     // internally (a no-op outside the portal build) until init() resolves.
     portalSdk.loadingStart();
     // Starts in the background; never blocks first paint (see
     // portal-sdk.js's own doc comment for the full init/queueing contract).
+    // A no-op here on the yandex target specifically — boot() below already
+    // triggered (and awaited) the same in-flight init() via
+    // getPortalLanguage(), so this just confirms sdkReady/sdkBroken is set.
     portalSdk.init();
 
-    this.gameState = new GameState();
+    this.gameState = new GameState(portalLanguage);
     this.appEl = document.getElementById('app');
     this.currentScreen = null;
     this.toastTimeout = null;
@@ -445,5 +453,13 @@ class GeoDoodleApp {
   }
 }
 
-// Boot the app
-new GeoDoodleApp();
+// Boot the app. #26: on the Yandex target, the SDK-reported language must be
+// known before the first screen renders (moderation requirement 2.14) — so
+// the very first thing at startup resolves it (a no-op, near-instant
+// Promise on every other target/build — see getPortalLanguage()) and only
+// then constructs the app. Never blocks on a broken/missing/slow SDK: see
+// portal-sdk.js's own timeout on this call.
+(async () => {
+  const portalLanguage = await portalSdk.getPortalLanguage();
+  new GeoDoodleApp(portalLanguage);
+})();

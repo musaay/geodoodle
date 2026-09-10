@@ -137,6 +137,11 @@ let queue = [];
 let inGameplay = false;
 let loadingStopped = false;
 let ysdk = null; // the resolved Yandex SDK instance (yandex target only)
+// Settles (never rejects) once init() knows sdkReady/sdkBroken — set exactly
+// once per module lifetime by init() itself, so getPortalLanguage() (#26)
+// can await the SAME in-flight init() rather than triggering a second
+// YaGames.init() call of its own.
+let initSettled = null;
 
 function flushQueue() {
   const pending = queue;
@@ -172,14 +177,16 @@ function applySettings(settings) {
 export function init() {
   if (!isPortalBuild()) return;
   if (sdkReady || sdkBroken) return;
+  if (initSettled) return; // already in flight — never call the platform's init() twice
 
   if (isYandexTarget()) {
     const YaGames = typeof window !== 'undefined' ? window.YaGames : undefined;
     if (!YaGames?.init) {
       markBroken();
+      initSettled = Promise.resolve();
       return;
     }
-    Promise.resolve(YaGames.init())
+    initSettled = Promise.resolve(YaGames.init())
       .then((resolvedSdk) => {
         ysdk = resolvedSdk;
         sdkReady = true;
@@ -194,10 +201,11 @@ export function init() {
   const CG = typeof window !== 'undefined' ? window.CrazyGames : undefined;
   if (!CG?.SDK?.init) {
     markBroken();
+    initSettled = Promise.resolve();
     return;
   }
 
-  Promise.resolve(CG.SDK.init())
+  initSettled = Promise.resolve(CG.SDK.init())
     .then(() => {
       if (CG.SDK.environment === 'disabled') {
         markBroken();
@@ -215,6 +223,34 @@ export function init() {
     .catch(() => {
       markBroken();
     });
+}
+
+// #26: how long getPortalLanguage() will wait for a pending init() before
+// giving up and returning null — the requirement page explicitly allows "a
+// short delay" before the first screen paints, but the app must never hang
+// on an init() that neither resolves nor rejects (SDK loaded but wedged).
+const LANGUAGE_DETECT_TIMEOUT_MS = 1500;
+
+/**
+ * The player's language per the Yandex SDK (requirement 2.14): 'tr' for
+ * 'tr', 'en' for every other code (ru/de/... — we only ship tr/en copy),
+ * null when unavailable (not the portal build, not the yandex target, SDK
+ * missing, init() failed/timed out, or the SDK doesn't report a language).
+ * Awaits the same init() flow the rest of this module already kicks off —
+ * never calls YaGames.init() a second time — so it's cheap to call this
+ * alongside the existing init()/loadingStart() calls in main.js.
+ */
+export async function getPortalLanguage() {
+  if (!isPortalBuild() || !isYandexTarget()) return null;
+  init();
+  await Promise.race([
+    initSettled,
+    new Promise((resolve) => setTimeout(resolve, LANGUAGE_DETECT_TIMEOUT_MS)),
+  ]);
+  if (sdkBroken || !ysdk) return null;
+  const lang = ysdk.environment?.i18n?.lang;
+  if (typeof lang !== 'string') return null;
+  return lang.toLowerCase() === 'tr' ? 'tr' : 'en';
 }
 
 /** Call as early as possible (main.js, before geometry/data fetches). */
@@ -285,4 +321,5 @@ export function __resetForTest() {
   inGameplay = false;
   loadingStopped = false;
   ysdk = null;
+  initSettled = null;
 }

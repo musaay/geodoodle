@@ -71,8 +71,15 @@ export function detectBrowserLanguage() {
  * Reactive event system for UI updates
  */
 export class GameState {
-  constructor() {
-    this.state = this.load();
+  /**
+   * `portalLanguage` (#26): 'tr'/'en' from the Yandex SDK
+   * (portal-sdk.js's getPortalLanguage()), or null. Only ever consulted on
+   * a true first run (no saved state) — a returning player's saved
+   * preference always wins, per Yandex requirement 2.14's "language saving
+   * in cache" exemption.
+   */
+  constructor(portalLanguage = null) {
+    this.state = this.load(portalLanguage);
     syncAudioEngineSoundEnabled(this.state.soundEnabled);
     this.listeners = new Set();
     this.session = {
@@ -87,7 +94,7 @@ export class GameState {
     };
   }
 
-  load() {
+  load(portalLanguage = null) {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
@@ -98,9 +105,10 @@ export class GameState {
     } catch (e) {
       console.warn('Failed to load game state:', e);
     }
-    // True first run — no saved preference to respect, so pick the language
-    // from the browser instead of always defaulting to Turkish.
-    const state = { ...freshDefaultState(), language: detectBrowserLanguage() };
+    // True first run — no saved preference to respect. The Yandex SDK's
+    // reported language (#26) wins when available; otherwise fall back to
+    // the existing browser-language detection, as on every other target.
+    const state = { ...freshDefaultState(), language: portalLanguage || detectBrowserLanguage() };
     setLanguage(state.language);
     return state;
   }
