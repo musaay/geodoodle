@@ -117,6 +117,49 @@ describe('GameState chain mode (#15)', () => {
   });
 });
 
+describe('GameState run mode (#32)', () => {
+  beforeEach(() => {
+    globalThis.localStorage.clear();
+  });
+
+  it('defaults to trace', () => {
+    const state = new GameState();
+    expect(state.getRunMode()).toBe('trace');
+  });
+
+  it('persists a chosen mode across reloads', () => {
+    const state = new GameState();
+    state.setRunMode('blind');
+    expect(state.getRunMode()).toBe('blind');
+
+    const reloaded = new GameState();
+    expect(reloaded.getRunMode()).toBe('blind');
+  });
+
+  it('ignores an invalid mode', () => {
+    const state = new GameState();
+    state.setRunMode('not-a-mode');
+    expect(state.getRunMode()).toBe('trace');
+  });
+
+  it('is reset to trace by resetAll', () => {
+    const state = new GameState();
+    state.setRunMode('blind');
+    state.resetAll();
+    expect(state.getRunMode()).toBe('trace');
+  });
+
+  it('is independent of chainMode — setting one never changes the other (#32)', () => {
+    const state = new GameState();
+    state.setChainMode('blind');
+    expect(state.getRunMode()).toBe('trace');
+
+    state.setRunMode('blind');
+    state.setChainMode('trace');
+    expect(state.getRunMode()).toBe('blind');
+  });
+});
+
 describe('GameState brush size (#24)', () => {
   beforeEach(() => {
     globalThis.localStorage.clear();

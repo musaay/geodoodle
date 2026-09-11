@@ -5,6 +5,14 @@ import { track } from '../engine/analytics.js';
 
 /**
  * HomeScreen - Main menu with game mode selection
+ *
+ * #32: rebuilt compact so the whole "what can I do" set (title, primary
+ * CTA, mode selector, Daily Triple, Neighbor Chain) fits one 393×852
+ * viewport with no scroll — #30 had already made the big Eğitim/Hafıza
+ * cards redundant (they started/resumed the same run the primary button
+ * does), so they're replaced here with the same compact two-way selector
+ * Neighbor Chain's own card already used, and Daily/Chain are given equal,
+ * single-status-line weight instead of the old multi-line cards.
  */
 export class HomeScreen {
   constructor(app) {
@@ -26,9 +34,19 @@ export class HomeScreen {
     const nextDailyRegionName = nextDailyRegion
       ? (lang === 'en' && nextDailyRegion.nameEn ? nextDailyRegion.nameEn : nextDailyRegion.name)
       : '';
+    // Single status line per #32's design (was two lines: next region,
+    // then a separate "N/3 played" line) — the played-count detail is
+    // still visible once the player actually opens the daily flow.
+    const dailyStatusLine = dailyProgress.isComplete
+      ? t('daily_complete_today', { total: dailyProgress.total })
+      : nextDailyRegionName;
     const dailyStreak = this.app.gameState.getDailyStreak();
     const bestChain = this.app.gameState.getBestChain();
+    const chainStatusLine = bestChain
+      ? t('chain_best', { links: bestChain.links, total: bestChain.total })
+      : t('chain_desc');
     const chainMode = this.app.gameState.getChainMode();
+    const runMode = this.app.gameState.getRunMode(); // #32 — distinct from chainMode, see game-state.js
     const activeRun = this.app.gameState.getActiveRun(); // #30
     // session.playerCount can be left at 2 from a prior round (no nav path
     // resets it) — derive both the toggle's visual state and the chain
@@ -36,85 +54,71 @@ export class HomeScreen {
     const playerCount = this.app.gameState.session.playerCount || 1;
 
     el.innerHTML = `
-      <div style="flex:1; display:flex; flex-direction:column; justify-content:center; align-items:center; padding: 2rem 1rem;">
-        <div class="animate-bounce-in" style="margin-bottom: 0.5rem; display: flex; justify-content: center;">
-          <i data-lucide="map" style="width: 4rem; height: 4rem; color: var(--primary);"></i>
+      <div class="home-hero" style="flex:1; display:flex; flex-direction:column; justify-content:center; align-items:center; padding-left: 1rem; padding-right: 1rem; padding-bottom: 1.5rem;">
+        <div class="home-logo-icon animate-bounce-in" style="margin-bottom: 0.15rem;">
+          <i data-lucide="map" style="width: 2.75rem; height: 2.75rem; color: var(--primary);"></i>
         </div>
-        <h1 class="logo">GeoDoodle</h1>
-        <p class="subtitle">${t('app_subtitle')}</p>
+        <h1 class="logo" style="font-size: 1.85rem;">GeoDoodle</h1>
+        <p class="subtitle" style="margin-bottom: 0.85rem; font-size: 0.85rem;">${t('app_subtitle')}</p>
 
-        <button class="btn btn-primary btn-lg animate-pop-in" data-action="run-primary" style="width: 100%; max-width: 400px; display: flex; align-items: center; justify-content: center; gap: 0.5rem; margin-bottom: 1.25rem;">
+        <button class="btn btn-primary btn-lg animate-pop-in" data-action="run-primary" style="width: 100%; max-width: 400px; display: flex; align-items: center; justify-content: center; gap: 0.5rem; margin-bottom: 0.5rem;">
           <i data-lucide="flag"></i> ${activeRun ? t('run_continue') : t('run_start')}
         </button>
 
-        <div class="home-modes">
-          <div class="mode-card animate-pop-in" data-action="mode-trace" style="animation-delay: 0.1s;">
-            <span class="icon"><i data-lucide="pen-tool"></i></span>
-            <h3>${t('mode_trace')}</h3>
-            <p>${t('mode_trace_desc')}</p>
-          </div>
-          <div class="mode-card animate-pop-in" data-action="mode-blind" style="animation-delay: 0.2s;">
-            <span class="icon"><i data-lucide="brain"></i></span>
-            <h3>${t('mode_blind')}</h3>
-            <p>${t('mode_blind_desc')}</p>
-          </div>
+        <div id="run-mode-toggle" class="chain-mode-toggle animate-pop-in" style="display: flex; gap: 0.25rem; background: var(--bg-secondary); padding: 0.2rem; border-radius: var(--radius-sm); margin-bottom: 0.85rem;">
+          <button class="chain-mode-btn ${runMode === 'trace' ? 'active' : ''}" data-action="run-mode-trace" style="padding: 0.4rem 1.75rem;"><h4 style="font-size: 0.8rem;">${t('mode_trace')}</h4></button>
+          <button class="chain-mode-btn ${runMode === 'blind' ? 'active' : ''}" data-action="run-mode-blind" style="padding: 0.4rem 1.75rem;"><h4 style="font-size: 0.8rem;">${t('mode_blind')}</h4></button>
         </div>
 
-        <div class="card daily-card animate-pop-in" data-action="daily" style="animation-delay: 0.25s; width: 100%; max-width: 400px; margin-top: 1rem; cursor: pointer; display: flex; align-items: center; gap: 1rem; text-align: left;">
-          <span class="icon" style="display: flex; align-items: center;"><i data-lucide="calendar" style="color: var(--accent-primary); width: 2rem; height: 2rem; flex-shrink: 0;"></i></span>
+        <div class="card daily-card animate-pop-in" data-action="daily" style="width: 100%; max-width: 400px; padding: 0.65rem 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 0.65rem; text-align: left;">
+          <i data-lucide="calendar" style="color: var(--accent-primary); width: 1.4rem; height: 1.4rem; flex-shrink: 0;"></i>
           <div style="flex: 1; min-width: 0;">
-            <h3 style="font-size: 1rem; margin: 0;">${t('daily_title')}</h3>
-            ${dailyProgress.isComplete
-              ? `<p style="margin: 0.15rem 0 0; color: var(--text-secondary); font-size: 0.9rem;">${t('daily_complete_today', { total: dailyProgress.total })}</p>`
-              : `
-                <p style="margin: 0.15rem 0 0; color: var(--text-secondary); font-size: 0.9rem;">${nextDailyRegionName}</p>
-                ${dailyProgress.playedCount > 0 ? `<p style="margin: 0.15rem 0 0; color: var(--text-secondary); font-size: 0.8rem;">${t('daily_progress', { played: dailyProgress.playedCount })}</p>` : ''}
-              `}
+            <div style="font-size: 0.85rem; font-weight: 600;">${t('daily_title')}</div>
+            <div style="font-size: 0.75rem; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${dailyStatusLine}</div>
           </div>
           ${dailyStreak >= 1 ? `
-            <span style="display: flex; align-items: center; gap: 0.25rem; color: var(--warning, #f39c12); font-weight: 600; flex-shrink: 0;">
-              <i data-lucide="flame" style="width: 1.1rem; height: 1.1rem;"></i>${t('daily_streak', { count: dailyStreak })}
+            <span style="display: flex; align-items: center; gap: 0.2rem; color: var(--warning, #f39c12); font-weight: 600; font-size: 0.8rem; flex-shrink: 0;">
+              <i data-lucide="flame" style="width: 1rem; height: 1rem;"></i>${dailyStreak}
             </span>
           ` : ''}
         </div>
 
-        <div id="chain-card" class="card animate-pop-in" data-action="chain" style="animation-delay: 0.28s; width: 100%; max-width: 400px; margin-top: 0.75rem; cursor: pointer; display: flex; align-items: center; gap: 1rem; text-align: left;">
-          <span class="icon" style="display: flex; align-items: center;"><i data-lucide="route" style="color: var(--accent-primary); width: 2rem; height: 2rem; flex-shrink: 0;"></i></span>
+        <div id="chain-card" class="card animate-pop-in" data-action="chain" style="width: 100%; max-width: 400px; padding: 0.65rem 0.85rem; margin-top: 0.4rem; cursor: pointer; display: flex; align-items: center; gap: 0.65rem; text-align: left;">
+          <i data-lucide="route" style="color: var(--accent-primary); width: 1.4rem; height: 1.4rem; flex-shrink: 0;"></i>
           <div style="flex: 1; min-width: 0;">
-            <h3 style="font-size: 1rem; margin: 0;">${t('chain_title')}</h3>
-            <p style="margin: 0.15rem 0 0; color: var(--text-secondary); font-size: 0.85rem;">${t('chain_desc')}</p>
-            ${bestChain ? `<p style="margin: 0.15rem 0 0; color: var(--text-secondary); font-size: 0.8rem;">${t('chain_best', { links: bestChain.links, total: bestChain.total })}</p>` : ''}
+            <div style="font-size: 0.85rem; font-weight: 600;">${t('chain_title')}</div>
+            <div style="font-size: 0.75rem; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${chainStatusLine}</div>
           </div>
-          <div class="chain-mode-toggle" style="display: flex; gap: 0.25rem; background: var(--bg-secondary); padding: 0.2rem; border-radius: var(--radius-sm); flex-shrink: 0;">
-            <button class="chain-mode-btn ${chainMode === 'trace' ? 'active' : ''}" data-action="chain-mode-trace" style="padding: 0.35rem 0.6rem;"><h4 style="font-size: 0.75rem;">${t('mode_trace')}</h4></button>
-            <button class="chain-mode-btn ${chainMode === 'blind' ? 'active' : ''}" data-action="chain-mode-blind" style="padding: 0.35rem 0.6rem;"><h4 style="font-size: 0.75rem;">${t('mode_blind')}</h4></button>
+          <div class="chain-mode-toggle" style="display: flex; gap: 0.2rem; background: var(--bg-secondary); padding: 0.15rem; border-radius: var(--radius-sm); flex-shrink: 0;">
+            <button class="chain-mode-btn ${chainMode === 'trace' ? 'active' : ''}" data-action="chain-mode-trace" style="padding: 0.3rem 0.55rem;"><h4 style="font-size: 0.7rem;">${t('mode_trace')}</h4></button>
+            <button class="chain-mode-btn ${chainMode === 'blind' ? 'active' : ''}" data-action="chain-mode-blind" style="padding: 0.3rem 0.55rem;"><h4 style="font-size: 0.7rem;">${t('mode_blind')}</h4></button>
           </div>
         </div>
 
-        <div style="margin-top: 1.5rem; display: flex; flex-direction: column; align-items: center; gap: 0.5rem;">
-          <h3 style="font-size: 1rem; color: var(--text-secondary);">${t('player_count')}</h3>
-          <div style="display: flex; gap: 1rem; background: var(--bg-secondary); padding: 0.25rem; border-radius: var(--radius-sm);">
-            <div class="player-card ${playerCount === 2 ? '' : 'active'}" data-action="player-1">
+        <div style="margin-top: 0.75rem; display: flex; flex-direction: column; align-items: center; gap: 0.3rem;">
+          <h3 style="font-size: 0.8rem; color: var(--text-secondary);">${t('player_count')}</h3>
+          <div style="display: flex; gap: 1rem; background: var(--bg-secondary); padding: 0.2rem; border-radius: var(--radius-sm);">
+            <div class="player-card ${playerCount === 2 ? '' : 'active'}" data-action="player-1" style="padding: 0.4rem 0.85rem;">
               <span class="icon" style="display: flex; align-items: center;"><i data-lucide="user"></i></span>
               <h4>${t('player_1')}</h4>
             </div>
-            <div class="player-card ${playerCount === 2 ? 'active' : ''}" data-action="player-2">
+            <div class="player-card ${playerCount === 2 ? 'active' : ''}" data-action="player-2" style="padding: 0.4rem 0.85rem;">
               <span class="icon" style="display: flex; align-items: center;"><i data-lucide="users"></i></span>
               <h4>${t('player_2')}</h4>
             </div>
           </div>
         </div>
 
-        <div class="home-actions animate-fade-in" style="animation-delay: 0.3s; width: 100%; max-width: 400px; margin-top: 2rem;">
-          <button class="btn btn-primary btn-lg" data-action="levels" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
-            <i data-lucide="target"></i> ${t('go_to_levels')}
+        <div style="display: flex; gap: 1.25rem; margin-top: 0.75rem; font-size: 0.8rem;">
+          <button data-action="levels" style="background: none; border: none; cursor: pointer; padding: 0; color: var(--text-secondary); text-decoration: underline; display: flex; align-items: center; gap: 0.3rem; font-size: inherit; font-family: inherit;">
+            <i data-lucide="target" style="width: 0.9rem; height: 0.9rem;"></i>${t('go_to_levels')}
           </button>
-          <button class="btn btn-secondary" data-action="stats" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
-            <i data-lucide="bar-chart-2"></i> ${t('statistics')} ${stats.totalDrawings > 0 ? `(${stats.regionsCompleted} ${t('regions')})` : ''}
+          <button data-action="stats" style="background: none; border: none; cursor: pointer; padding: 0; color: var(--text-secondary); text-decoration: underline; display: flex; align-items: center; gap: 0.3rem; font-size: inherit; font-family: inherit;">
+            <i data-lucide="bar-chart-2" style="width: 0.9rem; height: 0.9rem;"></i>${t('statistics')}${stats.totalDrawings > 0 ? ` (${stats.regionsCompleted})` : ''}
           </button>
         </div>
 
-        <div class="fun-fact animate-fade-in" style="animation-delay: 0.5s; max-width: 400px; display: flex; align-items: center; gap: 0.5rem;">
+        <div class="fun-fact animate-fade-in" style="margin-top: 1rem; max-width: 400px; display: flex; align-items: center; gap: 0.5rem;">
           <i data-lucide="lightbulb" style="color: var(--warning, #f39c12);"></i>
           <span>${t('fun_fact', { count: getAllRegions().length })}</span>
         </div>
@@ -146,39 +150,44 @@ export class HomeScreen {
       updateChainAvailability();
     });
 
-    // #30: the primary CTA always starts (or resumes) a Sefer/Run, always
-    // single player — a run can't run 2-player, so force it regardless of
-    // whatever the player-count toggle below currently shows.
+    // #30/#32: the primary CTA starts (or resumes) a Sefer/Run in whatever
+    // mode the compact selector above has picked, single player — a run
+    // can't be 2-player. In 2-player mode there's no run to start, so this
+    // preserves the pre-#32 mode cards' OTHER job for that case: route to
+    // level select in the selected mode (unchanged 2-player behavior,
+    // acceptance criterion #4).
     el.querySelector('[data-action="run-primary"]').addEventListener('click', () => {
-      this.app.gameState.session.playerCount = 1;
       this.app.gameState.session.currentPlayer = 1;
+      if (this.app.gameState.session.playerCount === 2) {
+        this.app.showLevelSelect(this.app.gameState.getRunMode());
+        return;
+      }
+      this.app.gameState.session.playerCount = 1;
       if (this.app.gameState.getActiveRun()) {
         this.app.resumeRun();
       } else {
-        this.app.startRun('trace');
+        this.app.startRun(this.app.gameState.getRunMode());
       }
     });
 
-    // The Eğitim/Hafıza cards now start a run in that mode too (#30) —
-    // only ONE run can be in progress at a time, so if one is already
-    // active this just resumes it rather than risking losing its
-    // progress by starting a conflicting new one. 2-player mode is run-
-    // exempt (unchanged): those cards still open level select there,
-    // since a run can never be 2-player.
-    const startOrResumeRun = (mode) => {
-      this.app.gameState.session.currentPlayer = 1;
-      if (this.app.gameState.session.playerCount === 2) {
-        this.app.showLevelSelect(mode);
-        return;
-      }
-      if (this.app.gameState.getActiveRun()) {
-        this.app.resumeRun();
-      } else {
-        this.app.startRun(mode);
-      }
-    };
-    el.querySelector('[data-action="mode-trace"]').addEventListener('click', () => startOrResumeRun('trace'));
-    el.querySelector('[data-action="mode-blind"]').addEventListener('click', () => startOrResumeRun('blind'));
+    // Run-mode selector (#32) — sets the persisted preference only; the
+    // primary button above reads it at click time. Scoped to its own
+    // container so it can reuse `.chain-mode-btn`'s existing look without
+    // its active-class toggling colliding with the Neighbor Chain card's
+    // OWN, separately-scoped pair of the same class below.
+    const runModeToggle = el.querySelector('#run-mode-toggle');
+    const runModeBtns = runModeToggle.querySelectorAll('.chain-mode-btn');
+    runModeToggle.querySelector('[data-action="run-mode-trace"]').addEventListener('click', () => {
+      runModeBtns.forEach(b => b.classList.remove('active'));
+      runModeToggle.querySelector('[data-action="run-mode-trace"]').classList.add('active');
+      this.app.gameState.setRunMode('trace');
+    });
+    runModeToggle.querySelector('[data-action="run-mode-blind"]').addEventListener('click', () => {
+      runModeBtns.forEach(b => b.classList.remove('active'));
+      runModeToggle.querySelector('[data-action="run-mode-blind"]').classList.add('active');
+      this.app.gameState.setRunMode('blind');
+    });
+
     if (dailyRegionIds.length > 0) {
       el.querySelector('[data-action="daily"]').addEventListener('click', () => {
         if (dailyProgress.isComplete) {
@@ -194,7 +203,7 @@ export class HomeScreen {
         this.app.enterDaily(dailyProgress.nextRegionId);
       });
     }
-    const chainModeBtns = el.querySelectorAll('.chain-mode-btn');
+    const chainModeBtns = chainCard.querySelectorAll('.chain-mode-btn');
     el.querySelector('[data-action="chain-mode-trace"]').addEventListener('click', (e) => {
       e.stopPropagation();
       chainModeBtns.forEach(b => b.classList.remove('active'));

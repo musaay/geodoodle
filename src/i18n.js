@@ -13,9 +13,7 @@ const translations = {
     // Home Screen
     app_subtitle: 'Sınırları Çiz',
     mode_trace: 'Eğitim',
-    mode_trace_desc: 'Sınırları takip et ve öğren',
     mode_blind: 'Hafıza',
-    mode_blind_desc: 'Hafızandan çiz',
     player_count: 'Oyuncu Sayısı',
     player_1: '1 Kişi',
     player_2: '2 Kişi',
@@ -178,9 +176,7 @@ const translations = {
     // Home Screen
     app_subtitle: 'Draw the Borders',
     mode_trace: 'Training',
-    mode_trace_desc: 'Trace and learn the borders',
     mode_blind: 'Memory',
-    mode_blind_desc: 'Draw from memory',
     player_count: 'Number of Players',
     player_1: '1 Player',
     player_2: '2 Players',

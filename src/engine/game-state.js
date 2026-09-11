@@ -34,6 +34,12 @@ const DEFAULT_STATE = {
   activeRun: null,
   bestRun: null, // { total, date } — best-ever run total (#30)
   lastRunRegionIds: [], // regions from the most recently COMPLETED run — the next run's picker avoids repeating them where possible
+  // Last mode chosen on the home screen's compact run-mode selector (#32)
+  // — a DISTINCT preference from `chainMode` above, deliberately: the
+  // player picks a mode for a Sefer/Run independently of whatever they
+  // last picked for a Neighbor Chain, even though both use the same
+  // Eğitim|Hafıza control style.
+  runMode: 'trace',
 };
 
 const BRUSH_SIZES = ['thin', 'medium', 'thick'];
@@ -377,6 +383,21 @@ export class GameState {
 
   getLastRunRegionIds() {
     return this.state.lastRunRegionIds || [];
+  }
+
+  // Run-mode preference (#32) — the compact Eğitim|Hafıza selector on the
+  // home screen. Kept distinct from getChainMode()/setChainMode() (#15)
+  // on purpose: the same visual control, but a different choice to the
+  // player, so overloading one field for both would let picking a mode
+  // for a chain silently change what a run starts in (or vice versa).
+  getRunMode() {
+    return this.state.runMode || 'trace';
+  }
+
+  setRunMode(mode) {
+    if (mode !== 'trace' && mode !== 'blind') return;
+    this.state.runMode = mode;
+    this.save();
   }
 
   /** Starts a fresh run. `regionIds` is already-picked, ladder-ordered (run-engine.js). */
