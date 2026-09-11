@@ -29,6 +29,7 @@ export class HomeScreen {
     const dailyStreak = this.app.gameState.getDailyStreak();
     const bestChain = this.app.gameState.getBestChain();
     const chainMode = this.app.gameState.getChainMode();
+    const activeRun = this.app.gameState.getActiveRun(); // #30
     // session.playerCount can be left at 2 from a prior round (no nav path
     // resets it) — derive both the toggle's visual state and the chain
     // card's visibility from the same value so they can't disagree.
@@ -41,6 +42,10 @@ export class HomeScreen {
         </div>
         <h1 class="logo">GeoDoodle</h1>
         <p class="subtitle">${t('app_subtitle')}</p>
+
+        <button class="btn btn-primary btn-lg animate-pop-in" data-action="run-primary" style="width: 100%; max-width: 400px; display: flex; align-items: center; justify-content: center; gap: 0.5rem; margin-bottom: 1.25rem;">
+          <i data-lucide="flag"></i> ${activeRun ? t('run_continue') : t('run_start')}
+        </button>
 
         <div class="home-modes">
           <div class="mode-card animate-pop-in" data-action="mode-trace" style="animation-delay: 0.1s;">
@@ -141,14 +146,39 @@ export class HomeScreen {
       updateChainAvailability();
     });
 
-    el.querySelector('[data-action="mode-trace"]').addEventListener('click', () => {
+    // #30: the primary CTA always starts (or resumes) a Sefer/Run, always
+    // single player — a run can't run 2-player, so force it regardless of
+    // whatever the player-count toggle below currently shows.
+    el.querySelector('[data-action="run-primary"]').addEventListener('click', () => {
+      this.app.gameState.session.playerCount = 1;
       this.app.gameState.session.currentPlayer = 1;
-      this.app.showLevelSelect('trace');
+      if (this.app.gameState.getActiveRun()) {
+        this.app.resumeRun();
+      } else {
+        this.app.startRun('trace');
+      }
     });
-    el.querySelector('[data-action="mode-blind"]').addEventListener('click', () => {
+
+    // The Eğitim/Hafıza cards now start a run in that mode too (#30) —
+    // only ONE run can be in progress at a time, so if one is already
+    // active this just resumes it rather than risking losing its
+    // progress by starting a conflicting new one. 2-player mode is run-
+    // exempt (unchanged): those cards still open level select there,
+    // since a run can never be 2-player.
+    const startOrResumeRun = (mode) => {
       this.app.gameState.session.currentPlayer = 1;
-      this.app.showLevelSelect('blind');
-    });
+      if (this.app.gameState.session.playerCount === 2) {
+        this.app.showLevelSelect(mode);
+        return;
+      }
+      if (this.app.gameState.getActiveRun()) {
+        this.app.resumeRun();
+      } else {
+        this.app.startRun(mode);
+      }
+    };
+    el.querySelector('[data-action="mode-trace"]').addEventListener('click', () => startOrResumeRun('trace'));
+    el.querySelector('[data-action="mode-blind"]').addEventListener('click', () => startOrResumeRun('blind'));
     if (dailyRegionIds.length > 0) {
       el.querySelector('[data-action="daily"]').addEventListener('click', () => {
         if (dailyProgress.isComplete) {

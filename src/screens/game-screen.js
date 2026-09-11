@@ -7,6 +7,7 @@ import { playClick, playSubmit, playHint } from '../engine/audio-engine.js';
 import { track } from '../engine/analytics.js';
 import { getContextCanvas, getTargetStyle, getContextBaseColor } from '../engine/context-renderer.js';
 import { loadRegionGeometry } from '../engine/region-geometry.js';
+import { formatRunHud } from '../engine/run-engine.js';
 import * as portalSdk from '../engine/portal-sdk.js';
 
 // Brush size names (persisted on GameState, #24) to the DrawingEngine lineWidth they map to.
@@ -43,6 +44,52 @@ export class GameScreen {
     this.geomToken = 0;
   }
 
+  /**
+   * The active run to show in the header HUD this round, or null if none
+   * — the single source of truth for "is this round's header showing run
+   * status instead of the normal mode label", shared by getModeText() and
+   * the header span's class list (render()/updateLanguage()) so the two
+   * can never disagree about it (#30 review finding — they'd previously
+   * checked `session.isRunRegion` and `getModeText()`'s own run branch
+   * separately, which happened to always agree today but had no guard
+   * keeping them that way).
+   */
+  getRunForHud() {
+    const session = this.app.gameState.session;
+    return session.isRunRegion ? this.app.gameState.getActiveRun() : null;
+  }
+
+  /**
+   * The header's right-hand status text (`#mode-text`, `.top-header-row-
+   * mode-text` — see #27) — normally EĞİTİM/HAFIZA/GÜNÜN 3'LÜSÜ, or the
+   * Sefer/Run HUD while this round is part of an active run (#30): per
+   * design, the run status REPLACES the mode label rather than adding to
+   * it — that slot is the one #27 hardened for narrow widths and blind
+   * mode's timer+hint, and the mode is already legible from the canvas
+   * itself (trace shows the border, memory doesn't). Two variants of the
+   * same string for the same reason: below 768px there's no room for a
+   * word, so it's numbers only ("2/5 · 184"); at/above 768px there's room
+   * for "SEFER"/"RUN". `run.index` is 0-based (regions completed so far)
+   * — the CURRENT (not-yet-submitted) region is index+1 in the 1-based
+   * "2/5" reading, and `total` is the sum of regions already scored, not
+   * counting this in-progress one. Shared by render() and
+   * updateLanguage() so a language toggle mid-round recomputes it the
+   * same way.
+   */
+  getModeText() {
+    const run = this.getRunForHud();
+    if (run) {
+      const index = run.index + 1;
+      const total = run.scores.reduce((sum, s) => sum + s, 0);
+      const { key, params } = formatRunHud({ index, total, viewportWidth: window.innerWidth });
+      return t(key, params);
+    }
+    const session = this.app.gameState.session;
+    return session.isDaily
+      ? t('mode_text_daily')
+      : this.mode === 'blind' ? t('mode_text_blind') : t('mode_text_trace');
+  }
+
   render(regionId, mode) {
     this.region = getRegionById(regionId);
     this.mode = mode;
@@ -66,9 +113,8 @@ export class GameScreen {
     el.id = 'game-screen';
     el.style.padding = '0.5rem';
 
-    const modeText = this.app.gameState.session.isDaily
-      ? t('mode_text_daily')
-      : mode === 'blind' ? t('mode_text_blind') : t('mode_text_trace');
+    const modeText = this.getModeText();
+    const modeTextClass = `top-header-row-mode-text${this.getRunForHud() ? ' top-header-row-run-hud' : ''}`;
     const lang = getLanguage();
     const isEnglishName = lang === 'en' && !!this.region.nameEn;
     const rName = isEnglishName ? this.region.nameEn : this.region.name;
@@ -93,7 +139,7 @@ export class GameScreen {
               </div>
               <button class="btn btn-icon animate-breathe" id="btn-hint" data-action="hint" title="${t('hint_title', {count: this.hintsRemaining})}" style="font-size: 1rem; padding: 0; min-height: 0; min-width: 0; line-height: 1; border: none; background: transparent; display: flex; align-items: center;"><i data-lucide="lightbulb" style="color: var(--warning, #f39c12); width: 20px; height: 20px;"></i></button>
             ` : ''}
-            <span id="mode-text" class="top-header-row-mode-text" style="color: var(--text-secondary); line-height: 1;">${modeText}</span>
+            <span id="mode-text" class="${modeTextClass}" style="color: var(--text-secondary); line-height: 1;">${modeText}</span>
           </div>
         </div>
       </div>
@@ -613,11 +659,8 @@ export class GameScreen {
     if (rnEl) rnEl.textContent = localeUpperCase(rName, isEnglishName);
 
     // Update mode text
-    const modeText = this.app.gameState.session.isDaily
-      ? t('mode_text_daily')
-      : this.mode === 'blind' ? t('mode_text_blind') : t('mode_text_trace');
     const mtEl = el.querySelector('#mode-text');
-    if (mtEl) mtEl.textContent = modeText;
+    if (mtEl) mtEl.textContent = this.getModeText();
 
     // Update hint button
     const hintBtn = el.querySelector('#btn-hint');

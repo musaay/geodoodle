@@ -1,9 +1,16 @@
 /**
  * Pure view-model for the result screen's "More" row (#21) — Neighbor
  * Chain + Daily Triple entry points shown below the primary/secondary
- * buttons on a NORMAL round's result (never while a chain or daily set is
- * already active, since the primary button already drives that flow, and
- * never in 2-player mode, where both modes are single-player only).
+ * buttons on a NORMAL round's result (never while a chain, daily set, or
+ * Sefer/Run (#30) is already active, since the primary button already
+ * drives that flow, and never in 2-player mode, where all three are
+ * single-player only). Hiding it during a run round isn't just about
+ * which flow "owns" the primary button — `more-chain`/`more-daily` never
+ * commit the run's in-progress score (see result-screen.js's `runOutcome`
+ * preview/commit split) and `more-chain` additionally abandons the whole
+ * run outright (startChain()'s hard chain/run exclusion), so leaving this
+ * row reachable mid-run let a stray tap silently destroy or desync run
+ * progress with no confirmation.
  * DOM-free so the visibility/label logic is unit-testable without a screen.
  */
 
@@ -12,6 +19,7 @@
  * @param {boolean} params.isMultiplayer
  * @param {object|null} params.chainOutcome - ResultScreen's own chainOutcome (non-null = a chain round)
  * @param {object|null} params.dailyOutcome - ResultScreen's own dailyOutcome (non-null = a daily round)
+ * @param {object|null} params.runOutcome - ResultScreen's own runOutcome (non-null = a Sefer/Run round, #30)
  * @param {{ playedCount: number, isComplete: boolean }} params.dailyProgress - today's Daily Triple progress, independent of any active chain
  * @param {{ links: number, total: number }|null} params.bestChain
  * @returns {null | { showChain: true, bestChain: object|null, showDaily: boolean, dailyStarted: boolean, dailyPlayedCount: number }}
@@ -21,8 +29,8 @@
  *   ("2/3 done") — "0/3 done" read wrong before any region was played (#21
  *   follow-up).
  */
-export function computeMoreRowState({ isMultiplayer, chainOutcome, dailyOutcome, dailyProgress, bestChain }) {
-  if (isMultiplayer || chainOutcome || dailyOutcome) return null;
+export function computeMoreRowState({ isMultiplayer, chainOutcome, dailyOutcome, runOutcome, dailyProgress, bestChain }) {
+  if (isMultiplayer || chainOutcome || dailyOutcome || runOutcome) return null;
   return {
     showChain: true,
     bestChain: bestChain || null,

@@ -11,6 +11,7 @@ import { normalizeRingsToCanvasPoints, visibleRingFraction } from '../engine/can
 import * as portalSdk from '../engine/portal-sdk.js';
 import { getContextCanvas, getTargetStyle } from '../engine/context-renderer.js';
 import { computeMoreRowState } from '../engine/result-more-row.js';
+import { formatRunHud } from '../engine/run-engine.js';
 
 /**
  * Shrink `text` (drawn in the given weight, starting at `baseSize`px) until
@@ -108,6 +109,22 @@ export class ResultScreen {
       this.dailyOutcome = { dailyRegionIds, progress };
     }
 
+    // Sefer / Run mode (#30) — single-player only, and never alongside a
+    // chain round (hard exclusion — see startRun()/startChain()'s mutual
+    // clearActiveRun() calls). Same preview-then-commit split as the
+    // chain above, for the same reason: recordRunRegionScore()/
+    // completeRun() are only called from the primary button's click
+    // handler, so "Tekrar Oyna" never advances the run.
+    this.runOutcome = null;
+    if (!isMultiplayer && session.isRunRegion) {
+      const run = this.app.gameState.getActiveRun();
+      if (run) {
+        const index = run.index + 1; // 1-based count completed AFTER this round
+        const total = run.scores.reduce((sum, s) => sum + s, 0) + score;
+        this.runOutcome = { index, total, isComplete: index >= run.regionIds.length };
+      }
+    }
+
     // "More" row (#21) — Neighbor Chain / Daily Triple entry points on a
     // NORMAL round's result only (see computeMoreRowState's own doc
     // comment for exactly when it's hidden). Today's Daily Triple progress
@@ -121,11 +138,25 @@ export class ResultScreen {
       isMultiplayer,
       chainOutcome: this.chainOutcome,
       dailyOutcome: this.dailyOutcome,
+      runOutcome: this.runOutcome,
       dailyProgress: todaysDailyProgress,
       bestChain: this.app.gameState.getBestChain(),
     });
 
-    const modeText = session.isDaily ? t('mode_text_daily') : (mode === 'blind' ? t('mode_text_blind') : t('mode_text_trace'));
+    // #30: the run HUD replaces the mode label here too — issue #30
+    // explicitly calls out both the game AND result screen headers.
+    // `this.runOutcome` already reflects this round's score committed (a
+    // preview — see its own comment above), matching what the primary
+    // button below is about to act on. formatRunHud() is shared with
+    // game-screen.js's getModeText() so the width threshold and the
+    // index/total reading can't drift between the two (#30 review).
+    let modeText;
+    if (this.runOutcome) {
+      const { key, params } = formatRunHud({ index: this.runOutcome.index, total: this.runOutcome.total, viewportWidth: window.innerWidth });
+      modeText = t(key, params);
+    } else {
+      modeText = session.isDaily ? t('mode_text_daily') : (mode === 'blind' ? t('mode_text_blind') : t('mode_text_trace'));
+    }
     const lang = getLanguage();
     const isEnglishName = lang === 'en' && !!region.nameEn;
     const rName = isEnglishName ? region.nameEn : region.name;
@@ -152,7 +183,7 @@ export class ResultScreen {
           <div class="top-header-row-right" style="display: flex; align-items: center;">
             ${isMultiplayer
               ? `<span id="p${num}-result-label" class="top-header-row-mode-text" style="color: var(--text-secondary); line-height: 1; visibility: hidden;"></span>`
-              : `<span class="top-header-row-mode-text" style="color: var(--text-secondary); line-height: 1;">${modeText}</span>`}
+              : `<span class="top-header-row-mode-text${this.runOutcome ? ' top-header-row-run-hud' : ''}" style="color: var(--text-secondary); line-height: 1;">${modeText}</span>`}
           </div>
         </div>
         <div id="p${num}-canvas-container" style="width: 100%; margin: 1rem auto; background: var(--button-bg); border-radius: var(--radius-md); padding: 1rem; border: 1px solid var(--border-color);"></div>
@@ -223,6 +254,14 @@ export class ResultScreen {
       primaryButtonLabel = progress.isComplete
         ? t('daily_view_summary')
         : t('daily_next', { n: progress.playedCount + 1 });
+    } else if (this.runOutcome) {
+      // No extraHudHtml chip here (unlike chain/daily): the run status
+      // already lives in the header (#30's getModeText() in game-screen.js
+      // — the header stays wired to the LIVE session there, not this
+      // preview), so a second copy below the canvas would just be noise.
+      primaryButtonLabel = this.runOutcome.isComplete
+        ? t('run_view_summary')
+        : t('run_next', { index: this.runOutcome.index + 1 });
     }
 
     el.innerHTML = `
@@ -333,6 +372,25 @@ export class ResultScreen {
           });
         } else {
           this.app.enterDaily(progress.nextRegionId);
+        }
+        return;
+      }
+
+      if (this.runOutcome) {
+        // Committing here, not in render() — same reasoning as the chain
+        // above: only now does this round's score actually become part of
+        // the run, so "Tekrar Oyna" never advances it.
+        const commit = this.app.gameState.recordRunRegionScore(score);
+        track('run_region_done', { index: commit.index, score });
+        this.cleanup();
+        session.currentPlayer = 1;
+        if (commit.isComplete) {
+          const summary = this.app.gameState.completeRun();
+          track('run_complete', { total: summary.total, duration_s: summary.durationS });
+          session.isRunRegion = false;
+          this.app.showRunSummary(summary);
+        } else {
+          this.app.resumeRun();
         }
         return;
       }

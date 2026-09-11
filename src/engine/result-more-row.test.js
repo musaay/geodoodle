@@ -27,6 +27,14 @@ describe('computeMoreRowState', () => {
     })).toBeNull();
   });
 
+  it('hides the whole row during an active Sefer/Run round (#30) — more-chain/more-daily never commit the run\'s score, and more-chain additionally abandons the run outright', () => {
+    expect(computeMoreRowState({
+      isMultiplayer: false, chainOutcome: null, dailyOutcome: null,
+      runOutcome: { index: 2, total: 140, isComplete: false },
+      dailyProgress: notComplete, bestChain: null,
+    })).toBeNull();
+  });
+
   it('shows the chain card (with no best-chain yet) and the daily card on a normal, single-player round', () => {
     const state = computeMoreRowState({
       isMultiplayer: false, chainOutcome: null, dailyOutcome: null,

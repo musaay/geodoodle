@@ -782,6 +782,21 @@ h1, h2, h3, h4, h5, h6 {
     min-width: 2ch;
     flex-shrink: 1;
   }
+  /* Sefer/Run HUD (#30) — unlike the mode label it replaces, this carries
+     live, at-a-glance information (progress + running total), so #27's
+     generic 2ch floor (fine for a static word like "EĞİTİM" fading to an
+     ellipsis) isn't good enough here: it must survive intact whenever the
+     short "N/5 · total" format is showing (<768px — see game-screen.js's
+     getModeText()), even against a long region name like "UNITED STATES".
+     Sized for that format's worst case, "5/5 · 500" (9 characters) — the
+     region name (.top-header-row-name, floored at 2ch) yields first
+     instead. The longer >=768px "SEFER N/5 · total" variant can still
+     ellipsize in the narrow 768-930px band both apply to; that's a rarer
+     width and the short format's own full-visibility guarantee (the one
+     #30 actually calls out) is unaffected. */
+  .top-header-row-run-hud {
+    min-width: 9ch;
+  }
 }
 
 .home-modes {

@@ -31,6 +31,8 @@ const translations = {
     chain_title: 'Komşu Zinciri',
     chain_desc: 'Bir bölgeden komşusuna zincirle, çarpanı büyüt!',
     chain_best: 'En iyi: {links} halka · {total}',
+    run_start: 'Sefere Başla',
+    run_continue: 'Sefere Devam Et',
 
     // Level Select Screen
     levels_trace: 'Eğitim Seviyeleri',
@@ -44,6 +46,13 @@ const translations = {
     mode_text_blind: 'HAFIZADAN',
     mode_text_trace: 'EĞİTİM',
     mode_text_daily: 'GÜNÜN 3\'LÜSÜ',
+    // Sefer / Run mode HUD (#30) — replaces mode_text_* in the game/result
+    // screen header while a run is active (src/screens/game-screen.js,
+    // result-screen.js). Two variants for the same `.top-header-row*` slot
+    // hardened in #27: below 768px there's no room for a word, so it's
+    // numbers only; at/above 768px there's room for "SEFER"/"RUN".
+    run_hud_short: '{index}/5 · {total}',
+    run_hud_long: 'SEFER {index}/5 · {total}',
     tool_thin_title: 'İnce Kalem',
     tool_thin: 'İnce',
     tool_medium_title: 'Orta Kalem',
@@ -95,6 +104,8 @@ const translations = {
     daily_hud: 'Günün 3\'lüsü: {played}/3 · Toplam {total}',
     daily_next: 'Sıradaki: {n}/3 →',
     daily_view_summary: 'Özeti gör →',
+    run_next: 'Sıradaki ({index}/5) →',
+    run_view_summary: 'Sefer özeti →',
     result_more_title: 'Daha Fazla',
     result_daily_not_started: 'Bugün 3 bölge',
     result_daily_progress: '{played}/3 tamamlandı',
@@ -134,6 +145,16 @@ const translations = {
     daily_summary_share: 'Paylaş',
     daily_summary_menu: 'Menüye Dön',
     daily_summary_copied: 'Panoya kopyalandı!',
+
+    // Run Summary Screen (#30)
+    run_summary_title: 'Sefer Tamamlandı!',
+    run_summary_new_best: 'Yeni rekor! 🎉',
+    run_summary_total: 'TOPLAM PUAN',
+    run_summary_average: 'Ortalama {avg}',
+    run_summary_best_ever: 'En iyi seferin: {total}',
+    run_summary_new_run: 'Yeni Sefer',
+    run_summary_daily: 'Günün 3\'lüsü',
+    run_summary_menu: 'Menüye Dön',
 
     // Handoff Screen
     handoff_title: 'Sıra Sende!',
@@ -175,6 +196,8 @@ const translations = {
     chain_title: 'Neighbor Chain',
     chain_desc: 'Chain one region into its neighbor, build the multiplier!',
     chain_best: 'Best: {links} links · {total}',
+    run_start: 'Start a Run',
+    run_continue: 'Continue Run',
 
     // Level Select Screen
     levels_trace: 'Training Levels',
@@ -188,6 +211,8 @@ const translations = {
     mode_text_blind: 'FROM MEMORY',
     mode_text_trace: 'TRAINING',
     mode_text_daily: 'DAILY TRIPLE',
+    run_hud_short: '{index}/5 · {total}',
+    run_hud_long: 'RUN {index}/5 · {total}',
     tool_thin_title: 'Thin Pen',
     tool_thin: 'Thin',
     tool_medium_title: 'Medium Pen',
@@ -239,6 +264,8 @@ const translations = {
     daily_hud: 'Daily Triple: {played}/3 · Total {total}',
     daily_next: 'Next: {n}/3 →',
     daily_view_summary: 'View summary →',
+    run_next: 'Next ({index}/5) →',
+    run_view_summary: 'Run summary →',
     share_text_daily_triple: 'I scored {total}/300 on today\'s Daily Triple — can you beat me?',
     result_more_title: 'More',
     result_daily_not_started: '3 regions today',
@@ -278,6 +305,16 @@ const translations = {
     daily_summary_share: 'Share',
     daily_summary_menu: 'Back to Menu',
     daily_summary_copied: 'Copied to clipboard!',
+
+    // Run Summary Screen (#30)
+    run_summary_title: 'Run Complete!',
+    run_summary_new_best: 'New best! 🎉',
+    run_summary_total: 'TOTAL SCORE',
+    run_summary_average: 'Average {avg}',
+    run_summary_best_ever: 'Your best run: {total}',
+    run_summary_new_run: 'New Run',
+    run_summary_daily: 'Daily Triple',
+    run_summary_menu: 'Back to Menu',
 
     // Handoff Screen
     handoff_title: 'Your Turn!',

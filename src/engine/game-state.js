@@ -25,6 +25,15 @@ const DEFAULT_STATE = {
   bestChain: null, // { links, total, date } — best-ever Neighbor Chain run (#15)
   chainMode: 'trace', // last mode chosen on the Neighbor Chain home card (#15)
   brushSize: 'medium', // last brush chosen on the game screen toolbar (#24) — eraser is a tool, not a brush, and is never persisted
+  // Sefer / Run mode (#30) — a 5-region escalating-difficulty session,
+  // played without visiting level select. Lives in `state` (not the
+  // transient `session` object) specifically so it survives a page
+  // reload — see startRun()/recordRunRegionScore()/completeRun() below.
+  // { regionIds: string[5], mode: 'trace'|'blind', index: number (0-5,
+  //   regions completed so far), scores: number[], startedAt: ms epoch }
+  activeRun: null,
+  bestRun: null, // { total, date } — best-ever run total (#30)
+  lastRunRegionIds: [], // regions from the most recently COMPLETED run — the next run's picker avoids repeating them where possible
 };
 
 const BRUSH_SIZES = ['thin', 'medium', 'thick'];
@@ -44,6 +53,7 @@ function freshDefaultState() {
     completedRegions: {},
     unlockedLevels: [...DEFAULT_STATE.unlockedLevels],
     daily: {},
+    lastRunRegionIds: [],
   };
 }
 
@@ -90,6 +100,7 @@ export class GameState {
       currentRegionId: null,
       currentMode: null,
       isDaily: false,
+      isRunRegion: false, // this round is part of an active Sefer/Run (#30) — mirrors isDaily
       chain: null, // { active, mode, links: [{region,score,value}], multiplier, total } — Neighbor Chain (#15)
     };
   }
@@ -330,6 +341,116 @@ export class GameState {
       this.save();
     }
     return isNewBest;
+  }
+
+  // Sefer / Run mode (#30) — a 5-region escalating-difficulty session. The
+  // region ladder itself is picked by the caller (run-engine.js's
+  // pickRunRegions, which needs the region data this module doesn't
+  // import) and handed to startRun(); everything else — progress,
+  // persistence across a reload, and the best-run record — lives here.
+  /**
+   * Self-healing against an out-of-range `index` (>= regionIds.length) —
+   * shouldn't happen (recordRunRegionScore()'s caller is expected to
+   * follow up with completeRun() the moment isComplete comes back true),
+   * but `save()` persists the incremented index BEFORE that follow-up
+   * call runs, so anything interrupting that narrow window (the tab/
+   * process dying, a future code path that throws in between) would
+   * otherwise leave a stale, out-of-bounds activeRun on disk. Portal's
+   * startInstantPlay() resumes unconditionally on boot whenever this
+   * returns non-null, so a corrupted run left unguarded would hard-stick
+   * a portal player on a blank screen (GameScreen.render() bails out to
+   * an empty div for an unresolvable region) on every future load.
+   */
+  getActiveRun() {
+    const run = this.state.activeRun;
+    if (run && run.index >= run.regionIds.length) {
+      this.state.activeRun = null;
+      this.save();
+      return null;
+    }
+    return run || null;
+  }
+
+  getBestRun() {
+    return this.state.bestRun || null;
+  }
+
+  getLastRunRegionIds() {
+    return this.state.lastRunRegionIds || [];
+  }
+
+  /** Starts a fresh run. `regionIds` is already-picked, ladder-ordered (run-engine.js). */
+  startRun(mode, regionIds) {
+    this.state.activeRun = {
+      regionIds: [...regionIds],
+      mode,
+      index: 0,
+      scores: [],
+      startedAt: Date.now(),
+    };
+    this.save();
+  }
+
+  /**
+   * Commits one region's score to the active run, advancing its index.
+   * No-op (returns null) if there's no active run — callers should already
+   * know one exists (via session.isRunRegion) before calling this, but a
+   * defensive no-op keeps a stray call harmless rather than throwing.
+   * Returns `{ index, total, isComplete }` — `index` is the 1-based count
+   * of regions completed so far INCLUDING this one; `isComplete` is true
+   * once all RUN_LENGTH regions are in. Deliberately mirrors
+   * applyChainLink's preview-then-commit split: ResultScreen computes what
+   * this WOULD look like for the HUD/button before the player actually
+   * clicks through, and only calls this from that click handler — so a
+   * "Tekrar Oyna" (retry) never advances the run.
+   */
+  recordRunRegionScore(score) {
+    const run = this.state.activeRun;
+    if (!run) return null;
+    run.scores.push(score);
+    run.index++;
+    const total = run.scores.reduce((sum, s) => sum + s, 0);
+    const isComplete = run.index >= run.regionIds.length;
+    this.save();
+    return { index: run.index, total, isComplete };
+  }
+
+  /**
+   * Finalizes a fully-scored run (run.index === run.regionIds.length):
+   * updates bestRun if this total is a new record, archives its regions as
+   * lastRunRegionIds (so the next run's picker avoids repeating them), and
+   * clears activeRun. Returns the summary RunSummaryScreen renders, or
+   * null if there's no active run to complete.
+   */
+  completeRun() {
+    const run = this.state.activeRun;
+    if (!run) return null;
+    const total = run.scores.reduce((sum, s) => sum + s, 0);
+    const durationS = Math.max(0, Math.round((Date.now() - run.startedAt) / 1000));
+    const existing = this.state.bestRun;
+    const isNewBest = !existing || total > existing.total;
+    if (isNewBest) {
+      this.state.bestRun = { total, date: todayStr() };
+    }
+    this.state.lastRunRegionIds = [...run.regionIds];
+    this.state.activeRun = null;
+    this.save();
+    return {
+      regionIds: run.regionIds,
+      scores: run.scores,
+      mode: run.mode,
+      total,
+      durationS,
+      isNewBest,
+      bestRun: this.state.bestRun,
+    };
+  }
+
+  /** Clears an in-progress run without completing it — e.g. starting a Neighbor Chain, which can never run alongside an active run. */
+  clearActiveRun() {
+    if (!this.state.activeRun) return;
+    this.state.activeRun = null;
+    this.save();
   }
 
   // Hints (per-game allowance lives in GameScreen; this is the lifetime counter)

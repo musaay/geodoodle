@@ -474,3 +474,168 @@ describe('GameState.canApplyLatePortalLanguage (#26 follow-up)', () => {
     expect(state.canApplyLatePortalLanguage('tr')).toBe(false);
   });
 });
+
+describe('GameState Sefer / Run mode (#30)', () => {
+  beforeEach(() => {
+    globalThis.localStorage.clear();
+  });
+
+  const REGION_IDS = ['r1', 'r2', 'r3', 'r4', 'r5'];
+
+  it('defaults to no active run, no best run, and no excluded regions', () => {
+    const state = new GameState();
+    expect(state.getActiveRun()).toBeNull();
+    expect(state.getBestRun()).toBeNull();
+    expect(state.getLastRunRegionIds()).toEqual([]);
+  });
+
+  it('starting a run persists its regions, mode, and a fresh progress state', () => {
+    const state = new GameState();
+    state.startRun('trace', REGION_IDS);
+
+    const run = state.getActiveRun();
+    expect(run).toMatchObject({ mode: 'trace', index: 0, scores: [] });
+    expect(run.regionIds).toEqual(REGION_IDS);
+    expect(typeof run.startedAt).toBe('number');
+
+    // Reload from storage to confirm it actually persisted, not just in-memory.
+    const reloaded = new GameState();
+    expect(reloaded.getActiveRun()).toMatchObject({ mode: 'trace', index: 0, regionIds: REGION_IDS });
+  });
+
+  it('starting a run does not mutate the regionIds array passed in', () => {
+    const state = new GameState();
+    const ids = [...REGION_IDS];
+    state.startRun('trace', ids);
+    state.recordRunRegionScore(80);
+    expect(ids).toEqual(REGION_IDS); // startRun copied it, didn't alias it
+  });
+
+  it('recordRunRegionScore advances the index and accumulates the total', () => {
+    const state = new GameState();
+    state.startRun('trace', REGION_IDS);
+
+    const r1 = state.recordRunRegionScore(80);
+    expect(r1).toEqual({ index: 1, total: 80, isComplete: false });
+
+    const r2 = state.recordRunRegionScore(60);
+    expect(r2).toEqual({ index: 2, total: 140, isComplete: false });
+
+    expect(state.getActiveRun().scores).toEqual([80, 60]);
+  });
+
+  it('recordRunRegionScore is a no-op when there is no active run', () => {
+    const state = new GameState();
+    expect(state.recordRunRegionScore(90)).toBeNull();
+    expect(state.getActiveRun()).toBeNull();
+  });
+
+  it('getActiveRun self-heals a stale out-of-range index instead of handing back an unresolvable run', () => {
+    const state = new GameState();
+    // Simulate the narrow window recordRunRegionScore()'s own doc comment
+    // describes: index already incremented past the last region (and
+    // persisted) but completeRun() never followed up — a real path (tab/
+    // process killed between the two calls) this guard exists for.
+    state.state.activeRun = { regionIds: REGION_IDS, mode: 'trace', index: 5, scores: [80, 60, 70, 50, 90], startedAt: Date.now() };
+    state.save();
+
+    expect(state.getActiveRun()).toBeNull();
+    // The self-heal itself must persist — a stale reload must not resurrect it.
+    const reloaded = new GameState();
+    expect(reloaded.getActiveRun()).toBeNull();
+  });
+
+  it('is marked complete once every region has a score, and the final progress persists across a reload', () => {
+    const state = new GameState();
+    state.startRun('blind', REGION_IDS);
+    let lastResult;
+    for (const score of [80, 60, 70, 50, 90]) {
+      lastResult = state.recordRunRegionScore(score);
+    }
+    expect(lastResult).toEqual({ index: 5, total: 350, isComplete: true });
+
+    // getActiveRun() self-heals an index === regionIds.length run — it's
+    // done, not "active" (see the self-heal test above) — so the raw
+    // persisted field is what's checked here, independent of that.
+    const reloaded = new GameState();
+    expect(reloaded.state.activeRun).toMatchObject({ index: 5, scores: [80, 60, 70, 50, 90] });
+  });
+
+  it('reports isComplete true exactly on the region that fills the run', () => {
+    const state = new GameState();
+    state.startRun('trace', REGION_IDS);
+    for (let i = 0; i < 4; i++) {
+      expect(state.recordRunRegionScore(50).isComplete).toBe(false);
+    }
+    expect(state.recordRunRegionScore(50).isComplete).toBe(true);
+  });
+
+  it('completeRun finalizes the run: clears activeRun, archives its regions, records a new best', () => {
+    const state = new GameState();
+    state.startRun('trace', REGION_IDS);
+    [80, 60, 70, 50, 90].forEach((s) => state.recordRunRegionScore(s));
+
+    const summary = state.completeRun();
+    expect(summary).toMatchObject({
+      regionIds: REGION_IDS,
+      scores: [80, 60, 70, 50, 90],
+      mode: 'trace',
+      total: 350,
+      isNewBest: true,
+    });
+    expect(typeof summary.durationS).toBe('number');
+
+    expect(state.getActiveRun()).toBeNull();
+    expect(state.getBestRun()).toMatchObject({ total: 350 });
+    expect(state.getLastRunRegionIds()).toEqual(REGION_IDS);
+  });
+
+  it('completeRun only replaces the best when the new total is higher', () => {
+    const state = new GameState();
+    state.startRun('trace', REGION_IDS);
+    [90, 90, 90, 90, 90].forEach((s) => state.recordRunRegionScore(s));
+    expect(state.completeRun().isNewBest).toBe(true);
+    expect(state.getBestRun().total).toBe(450);
+
+    state.startRun('trace', REGION_IDS);
+    [10, 10, 10, 10, 10].forEach((s) => state.recordRunRegionScore(s));
+    const worse = state.completeRun();
+    expect(worse.isNewBest).toBe(false);
+    expect(state.getBestRun().total).toBe(450); // unchanged
+  });
+
+  it('completeRun is a no-op when there is no active run', () => {
+    const state = new GameState();
+    expect(state.completeRun()).toBeNull();
+  });
+
+  it('clearActiveRun drops an in-progress run without recording a best or archiving its regions', () => {
+    const state = new GameState();
+    state.startRun('trace', REGION_IDS);
+    state.recordRunRegionScore(80);
+
+    state.clearActiveRun();
+    expect(state.getActiveRun()).toBeNull();
+    expect(state.getBestRun()).toBeNull();
+    expect(state.getLastRunRegionIds()).toEqual([]);
+  });
+
+  it('clearActiveRun is a harmless no-op when there is no active run', () => {
+    const state = new GameState();
+    expect(() => state.clearActiveRun()).not.toThrow();
+    expect(state.getActiveRun()).toBeNull();
+  });
+
+  it('is cleared by resetAll', () => {
+    const state = new GameState();
+    state.startRun('trace', REGION_IDS);
+    [80, 60, 70, 50, 90].forEach((s) => state.recordRunRegionScore(s));
+    state.completeRun();
+    state.startRun('trace', REGION_IDS);
+
+    state.resetAll();
+    expect(state.getActiveRun()).toBeNull();
+    expect(state.getBestRun()).toBeNull();
+    expect(state.getLastRunRegionIds()).toEqual([]);
+  });
+});

@@ -10,7 +10,7 @@ import './styles/animations.css';
 import {
   createIcons,
   ArrowLeft, ArrowRight, BarChart2, Brain, Calendar, CheckCircle2, Eraser,
-  Flame, Home, Lightbulb, Lock, Map, Moon, Paintbrush, Pen, PenTool,
+  Flag, Flame, Home, Lightbulb, Lock, Map, Moon, Paintbrush, Pen, PenTool,
   RotateCcw, Route, Share2, Star, Sun, Target, Trash2, TrendingUp, Undo2, User, Users,
   Volume2, VolumeX,
 } from 'lucide';
@@ -18,7 +18,7 @@ import {
 // Only the icons the app actually uses, so the rest of the set is tree-shaken
 const icons = {
   ArrowLeft, ArrowRight, BarChart2, Brain, Calendar, CheckCircle2, Eraser,
-  Flame, Home, Lightbulb, Lock, Map, Moon, Paintbrush, Pen, PenTool,
+  Flag, Flame, Home, Lightbulb, Lock, Map, Moon, Paintbrush, Pen, PenTool,
   RotateCcw, Route, Share2, Star, Sun, Target, Trash2, TrendingUp, Undo2, User, Users,
   Volume2, VolumeX,
 };
@@ -26,12 +26,16 @@ import { getLanguage } from './i18n.js';
 import { GameState } from './engine/game-state.js';
 import { parseDeepLink } from './engine/deep-link.js';
 import {
-  getDailyRegionPool, getDailyRegionId, getDailyRegionIds, getDailyProgress, todayStr,
+  getDailyRegionPool, getDailyRegionIds, getDailyProgress, todayStr,
 } from './engine/daily.js';
-import { getRegionById, levels } from './data/levels.js';
+import { getRegionById, getAllRegions, levels } from './data/levels.js';
 import { track } from './engine/analytics.js';
 import { createErrorTracker } from './engine/error-tracker.js';
 import { createChain } from './engine/chain-engine.js';
+import { pickRunRegions } from './engine/run-engine.js';
+import {
+  initPlaytimeTracker, startCounting as startPlaytimeCounting, stopCounting as stopPlaytimeCounting,
+} from './engine/playtime-tracker.js';
 import { HomeScreen } from './screens/home-screen.js';
 import { LevelSelectScreen } from './screens/level-select.js';
 import { GameScreen } from './screens/game-screen.js';
@@ -39,6 +43,7 @@ import { ResultScreen } from './screens/result-screen.js';
 import { StatsScreen } from './screens/stats-screen.js';
 import { ChainSummaryScreen } from './screens/chain-summary-screen.js';
 import { DailySummaryScreen } from './screens/daily-summary-screen.js';
+import { RunSummaryScreen } from './screens/run-summary-screen.js';
 
 import { HandoffScreen } from './screens/handoff-screen.js';
 import * as portalSdk from './engine/portal-sdk.js';
@@ -89,6 +94,14 @@ class GeoDoodleApp {
     // deliberate in-session choice.
     this._manualLanguageChange = false;
 
+    // #30: our own equivalent of CrazyGames' conversion definition ("played
+    // at least one minute"). Fires at most once per page load, whenever
+    // enough cumulative time has been spent with the game screen visible
+    // and foregrounded — see navigateTo()/installVisibilityHandling() below
+    // for where counting actually starts/stops. Not gated to the portal
+    // build; this is a GA4 KPI, not an SDK bracket.
+    initPlaytimeTracker(() => track('play_60s'));
+
     // Screen instances
     this.screens = {
       home: new HomeScreen(this),
@@ -99,6 +112,7 @@ class GeoDoodleApp {
       handoff: new HandoffScreen(this),
       chainSummary: new ChainSummaryScreen(this),
       dailySummary: new DailySummaryScreen(this),
+      runSummary: new RunSummaryScreen(this),
     };
 
     // Apply saved theme
@@ -159,19 +173,29 @@ class GeoDoodleApp {
    * hidden tab open past a Back/submit shouldn't spuriously restart it
    * either. A no-op outside the portal build (isInGameplay() is always
    * false there — see portal-sdk.js).
+   *
+   * #30: the play_60s cumulative-playtime tracker rides along here too —
+   * unlike the portal gameplay bracket, it's not build-gated (it's a GA4
+   * KPI, not an SDK call), and it only cares about "is the game screen
+   * visible and foregrounded right now", independent of
+   * `_resumeGameplayOnVisible` (which is specifically about resuming an
+   * UNMATCHED portal gameplayStart()).
    */
   installVisibilityHandling() {
     document.addEventListener('visibilitychange', () => {
+      const onGameScreen = this.currentScreen?.id === 'game-screen';
       if (document.hidden) {
         if (portalSdk.isInGameplay()) {
           this._resumeGameplayOnVisible = true;
           portalSdk.gameplayStop();
         }
-      } else if (this._resumeGameplayOnVisible) {
-        this._resumeGameplayOnVisible = false;
-        if (this.currentScreen?.id === 'game-screen') {
-          portalSdk.gameplayStart();
+        if (onGameScreen) stopPlaytimeCounting();
+      } else {
+        if (this._resumeGameplayOnVisible) {
+          this._resumeGameplayOnVisible = false;
+          if (onGameScreen) portalSdk.gameplayStart();
         }
+        if (onGameScreen) startPlaytimeCounting();
       }
     });
   }
@@ -189,6 +213,7 @@ class GeoDoodleApp {
       session.playerCount = 1;
       session.currentPlayer = 1;
       session.isDaily = false;
+      session.isRunRegion = false;
       // Deep-linked region games bypass the level star gate on purpose —
       // startGame() itself never checks unlock state (only LevelSelectScreen
       // does, by simply not wiring up a click handler for locked cards), so
@@ -213,21 +238,72 @@ class GeoDoodleApp {
   }
 
   /**
-   * Portal-only instant play (issue #14): starts a trace-mode round in one
-   * of the level-1 "easy" regions directly, rotating which one by day (via
-   * the same date-hash used for the daily challenge) so repeat visitors see
-   * variety rather than always landing on the same country.
+   * Portal-only instant play (issue #14, superseded by #30): drops straight
+   * into a Sefer/Run instead of a single region — resuming one already in
+   * progress (a reload mid-run, or the player returning later) rather than
+   * starting a competing second one. `startGame()`'s existing #23
+   * loadingStop()/gameplayStart() sequencing is untouched either way, since
+   * both paths end in the same startGame() call.
    */
   startInstantPlay() {
-    const easyLevel = levels.find((l) => l.id === 1);
-    const regionId = getDailyRegionId(todayStr(), easyLevel.regions);
-    if (!regionId) return;
+    if (this.gameState.getActiveRun()) {
+      this.resumeRun();
+      return;
+    }
+    this.startRun('trace');
+  }
+
+  /**
+   * Starts a fresh Sefer/Run (#30): a 5-region escalating-difficulty
+   * ladder (countries only — see run-engine.js's pickRunRegions), single
+   * player, one mode for the whole run (no mid-run flip). Mutually
+   * exclusive with Neighbor Chain (#15) in both directions — see
+   * startChain()'s own clearActiveRun() call.
+   */
+  startRun(mode) {
+    const countryRegions = getAllRegions().filter((r) => r.category === 'country');
+    const regionIds = pickRunRegions(countryRegions, this.gameState.getLastRunRegionIds(), Math.random);
+    if (regionIds.length === 0) return; // defensive — never actually empty with the real region set
+
+    this.gameState.startRun(mode, regionIds);
 
     const session = this.gameState.session;
     session.playerCount = 1;
     session.currentPlayer = 1;
     session.isDaily = false;
-    this.startGame(regionId, 'trace');
+    session.isRunRegion = true;
+    session.chain = null;
+
+    track('run_start', { mode });
+    this.startGame(regionIds[0], mode);
+  }
+
+  /** Resumes an in-progress run at whatever region it left off on. No-op if there's no active run. */
+  resumeRun() {
+    const run = this.gameState.getActiveRun();
+    if (!run) return;
+
+    const session = this.gameState.session;
+    session.playerCount = 1;
+    session.currentPlayer = 1;
+    session.isDaily = false;
+    session.isRunRegion = true;
+    session.chain = null;
+
+    this.startGame(run.regionIds[run.index], run.mode);
+  }
+
+  showRunSummary(summary) {
+    this.navigateTo(this.screens.runSummary.render(summary));
+  }
+
+  /**
+   * Clears an in-progress run without completing it — the run/chain hard
+   * exclusion means starting a chain has to make this call. Safe to call
+   * unconditionally (a no-op with no active run).
+   */
+  abandonActiveRun() {
+    this.gameState.clearActiveRun();
   }
 
   /**
@@ -261,6 +337,14 @@ class GeoDoodleApp {
 
   /** Navigate to a new screen */
   navigateTo(screenEl) {
+    // #30: play_60s counts cumulative time on the game screen specifically
+    // — compute the transition against the OLD screen before it's replaced
+    // below. A game-screen-to-game-screen transition (retry/next-region/
+    // handoff) leaves counting running uninterrupted (neither branch fires).
+    const wasGame = this.currentScreen?.id === 'game-screen';
+    const willBeGame = screenEl.id === 'game-screen';
+    if (wasGame && !willBeGame) stopPlaytimeCounting();
+
     // Remove old screen
     if (this.currentScreen) {
       this.currentScreen.remove();
@@ -273,6 +357,8 @@ class GeoDoodleApp {
     if (window.lucide) {
       window.lucide.createIcons();
     }
+
+    if (willBeGame && !wasGame) startPlaytimeCounting();
   }
 
   showHome() {
@@ -312,12 +398,17 @@ class GeoDoodleApp {
    * single player, regardless of whatever the home screen's own mode
    * selection or chain toggle is currently set to. Shared by the home
    * screen's daily card and the `?daily=1` deep link.
+   *
+   * #30: does NOT touch an in-progress run — `isRunRegion: false` just
+   * means THIS round isn't part of it; `state.activeRun` is left exactly
+   * where it was, so a run stays resumable after a daily detour.
    */
   enterDaily(regionId) {
     const session = this.gameState.session;
     session.playerCount = 1;
     session.currentPlayer = 1;
     session.isDaily = true;
+    session.isRunRegion = false;
     this.startGame(regionId, 'blind');
   }
 
@@ -329,6 +420,10 @@ class GeoDoodleApp {
    * continuation) — otherwise a random level-1 (easy) region, the original
    * behavior for the home screen card and the chain summary's "play again"
    * button. `from` tags the `chain_start` event's entry point for GA4.
+   *
+   * #30: a run can never be active at the same time as a chain — clears
+   * one before starting the other (abandonActiveRun() is the reverse:
+   * called when a run round's "More" row is used to branch into a chain).
    */
   startChain(mode, { startRegionId, from } = {}) {
     let regionId = startRegionId;
@@ -337,10 +432,13 @@ class GeoDoodleApp {
       regionId = easyLevel.regions[Math.floor(Math.random() * easyLevel.regions.length)];
     }
 
+    this.abandonActiveRun();
+
     const session = this.gameState.session;
     session.playerCount = 1;
     session.currentPlayer = 1;
     session.isDaily = false;
+    session.isRunRegion = false;
     session.chain = createChain(mode);
 
     track('chain_start', { mode, from });
